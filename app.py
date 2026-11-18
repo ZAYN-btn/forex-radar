@@ -1,212 +1,230 @@
 
-import streamlit as st
 import pandas as pd
-from datetime import datetime
-from forex_engine import MARKETS, analyze_market
+import yfinance as yf
+from datetime import datetime, timezone
 
-st.set_page_config(
-    page_title="Forex Radar",
-    page_icon="📡",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+MARKETS = {
+    "EUR/USD": "EURUSD=X",
+    "GBP/USD": "GBPUSD=X",
+    "USD/JPY": "JPY=X",
+    "USD/CHF": "CHF=X",
+    "USD/CAD": "CAD=X",
+    "AUD/USD": "AUDUSD=X",
+    "NZD/USD": "NZDUSD=X",
 
-st.markdown("""
-<style>
-.stApp {
-    background: #101722;
-    color: #F1F5F9;
+    "EUR/GBP": "EURGBP=X",
+    "EUR/JPY": "EURJPY=X",
+    "EUR/CHF": "EURCHF=X",
+    "GBP/JPY": "GBPJPY=X",
+    "GBP/CHF": "GBPCHF=X",
+    "AUD/JPY": "AUDJPY=X",
+    "EUR/AUD": "EURAUD=X",
+    "GBP/AUD": "GBPAUD=X",
+    "AUD/NZD": "AUDNZD=X",
+    "CAD/JPY": "CADJPY=X",
+
+    "XAU/USD": "XAUUSD=X",
+    "XAG/USD": "XAGUSD=X"
 }
-.block-container {
-    max-width: 1250px;
-    padding-top: 2rem;
-}
-header[data-testid="stHeader"] {
-    background: transparent;
-}
-h1, h2, h3, p, label, span {
-    color: #F1F5F9;
-}
-.market-card {
-    background: #1B2736;
-    border: 1px solid #34445A;
-    border-radius: 14px;
-    padding: 18px;
-    margin-bottom: 12px;
-}
-.muted {
-    color: #B6C4D6 !important;
-    font-size: 13px;
-}
-.price {
-    font-size: 28px;
-    font-weight: 800;
-    color: #FFFFFF;
-}
-.long {
-    color: #36E0A1 !important;
-    font-weight: 800;
-}
-.short {
-    color: #FF7888 !important;
-    font-weight: 800;
-}
-.wait {
-    color: #FFD166 !important;
-    font-weight: 800;
-}
-div[data-testid="stMetric"] {
-    background: #1B2736;
-    border: 1px solid #34445A;
-    border-radius: 12px;
-    padding: 14px;
-}
-div[data-testid="stMetricLabel"] {
-    color: #C3D0E0 !important;
-}
-div[data-testid="stMetricValue"] {
-    color: #FFFFFF !important;
-}
-.stButton button {
-    background: #36D9A0;
-    color: #10231D;
-    border: none;
-    border-radius: 9px;
-    font-weight: 700;
-}
-.stButton button:hover {
-    background: #65E9BA;
-    color: #10231D;
-}
-hr {
-    border-color: #34445A;
-}
-[data-testid="stDataFrame"] {
-    border: 1px solid #34445A;
-    border-radius: 10px;
-}
-</style>
-""", unsafe_allow_html=True)
 
-st.markdown("""
-<div style="background:#1B2736;padding:22px;border:1px solid #34445A;
-border-radius:15px;margin-bottom:22px;">
-<div style="color:#36E0A1;font-size:12px;font-weight:800;letter-spacing:2px;">
-MARKET ANALYSIS
-</div>
-<div style="font-size:29px;font-weight:800;color:white;">
-📡 FOREX RADAR PRO
-</div>
-<div style="color:#B6C4D6;font-size:13px;">
-Sade • Modern • Çoklu zaman dilimi analizi
-</div>
-</div>
-""", unsafe_allow_html=True)
+def indicators(df):
+    df = df.copy()
 
-st.sidebar.title("Ayarlar")
+    df["EMA20"] = df["Close"].ewm(
+        span=20, adjust=False
+    ).mean()
 
-balance = st.sidebar.number_input(
-    "Demo bakiye ($)", min_value=100, value=10000, step=500
-)
+    df["EMA50"] = df["Close"].ewm(
+        span=50, adjust=False
+    ).mean()
 
-risk_percent = st.sidebar.number_input(
-    "İşlem riski (%)",
-    min_value=0.1, max_value=2.0, value=0.5, step=0.1
-)
+    change = df["Close"].diff()
 
-risk_amount = balance * risk_percent / 100
+    gain = change.clip(lower=0).ewm(
+        alpha=1/14, adjust=False
+    ).mean()
 
-st.sidebar.metric("Risk bütçesi", f"${risk_amount:.2f}")
+    loss = (-change.clip(upper=0)).ewm(
+        alpha=1/14, adjust=False
+    ).mean()
 
-if st.sidebar.button("Analizi yenile", use_container_width=True):
-    st.cache_data.clear()
-    st.rerun()
+    rs = gain / loss.replace(0, float("nan"))
+    df["RSI"] = 100 - (100 / (1 + rs))
 
-st.title("Piyasa özeti")
+    previous = df["Close"].shift(1)
 
-a, b, c = st.columns(3)
-a.metric("Demo bakiye", f"${balance:,.0f}")
-b.metric("İşlem riski", f"{risk_percent:.1f}%")
-c.metric("Risk bütçesi", f"${risk_amount:.2f}")
+    tr = pd.concat([
+        df["High"] - df["Low"],
+        (df["High"] - previous).abs(),
+        (df["Low"] - previous).abs()
+    ], axis=1).max(axis=1)
 
-st.caption("Son panel açılışı: " + datetime.now().strftime("%d.%m.%Y %H:%M"))
+    df["ATR"] = tr.rolling(14).mean()
 
-@st.cache_data(ttl=60)
-def load_results():
-    return [analyze_market(name, symbol) for name, symbol in MARKETS.items()]
+    return df.dropna()
 
-st.markdown("## Piyasa analizi")
 
-results = load_results()
+def resample_data(df, timeframe):
+    result = df.resample(timeframe).agg({
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Close": "last",
+        "Volume": "sum"
+    })
 
-for item in results:
-    name = item["market"]
+    return result.dropna()
 
-    if item["status"] != "OK":
-        st.markdown(f"""
-        <div class="market-card">
-        <b>{name}</b>
-        <div class="wait">WAIT — VERİ ALINAMADI</div>
-        <div class="muted">{item.get("error", "Bilinmeyen hata")}</div>
-        </div>
-        """, unsafe_allow_html=True)
-        continue
 
-    direction = item["direction"]
-    signal_class = {
-        "LONG": "long",
-        "SHORT": "short",
-        "WAIT": "wait"
-    }.get(direction, "wait")
+def get_trend(row):
+    if row["Close"] > row["EMA20"] > row["EMA50"]:
+        return "LONG"
 
-    st.markdown(f"""
-    <div class="market-card">
-    <div style="display:flex;justify-content:space-between;align-items:center;">
-        <div style="font-size:21px;font-weight:800;color:white;">{name}</div>
-        <div class="{signal_class}" style="font-size:19px;">{direction}</div>
-    </div>
-    <div class="price">{item["price"]:.5f}</div>
-    <div class="muted">Sinyal uyum puanı: {item["score"]}/100</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if row["Close"] < row["EMA20"] < row["EMA50"]:
+        return "SHORT"
 
-    st.markdown("**Zaman dilimleri**")
+    return "NEUTRAL"
 
-    t1, t2, t3 = st.columns(3)
-    t1.metric("5 DAKİKA", item["trend5"])
-    t2.metric("15 DAKİKA", item["trend15"])
-    t3.metric("1 SAAT", item["trend1"])
 
-    r1, r2 = st.columns(2)
-    r1.metric("RSI", f'{item["rsi"]:.2f}')
-    r2.metric("Fiyat", f'{item["price"]:.5f}')
-
-    levels = []
-
-    if item.get("support") is not None:
-        levels.append({"Seviye": "Destek", "Fiyat": item["support"]})
-
-    if item.get("resistance") is not None:
-        levels.append({"Seviye": "Direnç", "Fiyat": item["resistance"]})
-
-    if direction != "WAIT":
-        levels.extend([
-            {"Seviye": "Giriş referansı", "Fiyat": item["price"]},
-            {"Seviye": "Stop Loss", "Fiyat": item["stop_loss"]},
-            {"Seviye": "TP1", "Fiyat": item["tp1"]},
-            {"Seviye": "TP2", "Fiyat": item["tp2"]}
-        ])
-
-    if levels:
-        st.dataframe(
-            pd.DataFrame(levels),
-            use_container_width=True,
-            hide_index=True
+def analyze_market(name, symbol):
+    try:
+        raw = yf.Ticker(symbol).history(
+            period="5d",
+            interval="5m",
+            auto_adjust=False
         )
 
-    st.divider()
+        if raw.empty or len(raw) < 100:
+            raise ValueError("Yeterli 5 dakikalık veri yok")
 
-st.caption(
-    "Forex Radar yalnızca analiz sunar. Otomatik emir göndermez. "
-    "Sinyal puanı kazanma olasılığı değildir. Haber filtresi henüz aktif değildir."
-)
+        raw = raw.dropna(
+            subset=["Open", "High", "Low", "Close"]
+        )
+
+        if raw.empty:
+            raise ValueError("Eksik fiyat verisi")
+
+        last_time = raw.index[-1]
+
+        if last_time.tzinfo is None:
+            last_time = last_time.tz_localize("UTC")
+
+        age = (
+            datetime.now(timezone.utc)
+            - last_time.to_pydatetime()
+        ).total_seconds() / 60
+
+        if age > 30:
+            raise ValueError("Fiyat verisi güncel değil")
+
+        m5 = indicators(raw)
+        m15 = indicators(resample_data(raw, "15min"))
+        h1 = indicators(resample_data(raw, "1h"))
+
+        if len(m5) < 2 or len(m15) < 55 or len(h1) < 55:
+            raise ValueError("Zaman dilimleri için veri yetersiz")
+
+        r5 = m5.iloc[-1]
+        r15 = m15.iloc[-1]
+        r1 = h1.iloc[-1]
+
+        price = float(r5["Close"])
+        rsi = float(r5["RSI"])
+        atr = float(r5["ATR"])
+
+        if atr <= 0:
+            raise ValueError("ATR hesaplanamadı")
+
+        trend5 = get_trend(r5)
+        trend15 = get_trend(r15)
+        trend1 = get_trend(r1)
+
+        direction = "WAIT"
+        score = 0
+
+        if (
+            trend5 == "LONG"
+            and trend15 == "LONG"
+            and trend1 == "LONG"
+            and 45 < rsi < 68
+        ):
+            direction = "LONG"
+            score = 85
+
+            if 50 < rsi < 62:
+                score += 5
+
+        elif (
+            trend5 == "SHORT"
+            and trend15 == "SHORT"
+            and trend1 == "SHORT"
+            and 32 < rsi < 55
+        ):
+            direction = "SHORT"
+            score = 85
+
+            if 38 < rsi < 50:
+                score += 5
+
+        recent = m5.tail(60)
+
+        supports = recent.loc[
+            recent["Low"] < price, "Low"
+        ]
+
+        resistances = recent.loc[
+            recent["High"] > price, "High"
+        ]
+
+        support = (
+            float(supports.max())
+            if not supports.empty else None
+        )
+
+        resistance = (
+            float(resistances.min())
+            if not resistances.empty else None
+        )
+
+        sl = None
+        tp1 = None
+        tp2 = None
+
+        if direction == "LONG":
+            sl = price - 1.5 * atr
+            tp1 = price + 1.5 * atr
+            tp2 = price + 3 * atr
+
+        elif direction == "SHORT":
+            sl = price + 1.5 * atr
+            tp1 = price - 1.5 * atr
+            tp2 = price - 3 * atr
+
+        return {
+            "market": name,
+            "direction": direction,
+            "score": min(score, 100),
+            "price": price,
+            "rsi": rsi,
+            "atr": atr,
+            "trend5": trend5,
+            "trend15": trend15,
+            "trend1": trend1,
+            "support": support,
+            "resistance": resistance,
+            "stop_loss": sl,
+            "tp1": tp1,
+            "tp2": tp2,
+            "bar_high": float(r5["High"]),
+            "bar_low": float(r5["Low"]),
+            "data_age": round(age, 1),
+            "status": "OK"
+        }
+
+    except Exception as error:
+        return {
+            "market": name,
+            "direction": "WAIT",
+            "status": "ERROR",
+            "error": str(error)
+        }

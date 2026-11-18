@@ -9,78 +9,105 @@ from xml.etree import ElementTree as ET
 from streamlit_autorefresh import st_autorefresh
 from forex_engine import MARKETS, analyze_market
 
+# =========================
+# SAYFA AYARLARI
+# =========================
+
 st.set_page_config(
     page_title="FOREX RADAR",
     page_icon="📈",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
-
-# ---------------- CSS ----------------
 
 st.markdown("""
 <style>
 .stApp {
-    background: #090909;
-    color: #f5f5f5;
+    background: #080808;
+    color: #ffffff;
 }
 .block-container {
-    max-width: 1250px;
-    padding-top: 1.5rem;
+    max-width: 1400px;
+    padding-top: 1.2rem;
     padding-bottom: 3rem;
 }
-h1, h2, h3, p, label, span {
-    color: #f5f5f5;
+html, body, [class*="css"] {
+    color: #ffffff;
 }
-.stCaption, [data-testid="stCaptionContainer"] {
-    color: #999 !important;
+h1, h2, h3, h4, p, label {
+    color: #ffffff !important;
 }
-div[data-testid="stMetric"] {
+[data-testid="stCaptionContainer"] {
+    color: #999999 !important;
+}
+[data-testid="stMetric"] {
     background: #151515;
-    border: 1px solid #333;
-    padding: 15px;
+    border: 1px solid #303030;
+    padding: 14px;
     border-radius: 12px;
 }
-div[data-testid="stMetricLabel"] {
-    color: #aaa !important;
+[data-testid="stMetricLabel"] {
+    color: #aaaaaa !important;
 }
-div[data-testid="stMetricValue"] {
-    color: white !important;
+[data-testid="stMetricValue"] {
+    color: #ffffff !important;
 }
 .stButton > button {
-    background: #191919 !important;
+    background: #171717 !important;
     color: #ffffff !important;
-    border: 1px solid #444 !important;
-    border-radius: 10px !important;
-    min-height: 46px;
-    font-weight: 650 !important;
+    border: 1px solid #383838 !important;
+    border-radius: 9px !important;
+    min-height: 44px;
     width: 100%;
+    font-weight: 650 !important;
 }
 .stButton > button:hover {
-    background: #303030 !important;
-    border-color: #888 !important;
-    color: white !important;
+    background: #292929 !important;
+    border-color: #888888 !important;
+    color: #ffffff !important;
 }
-.stSelectbox div[data-baseweb="select"] > div {
-    background: #191919 !important;
-    color: white !important;
-    border-color: #444 !important;
+.stTabs [data-baseweb="tab-list"] {
+    background: #111111;
+    border: 1px solid #292929;
+    border-radius: 10px;
+    gap: 4px;
+    padding: 5px;
 }
 .stTabs [data-baseweb="tab"] {
-    color: #bbb !important;
+    background: transparent;
+    color: #bbbbbb !important;
+    border-radius: 7px;
+    padding: 10px 15px;
 }
 .stTabs [aria-selected="true"] {
+    background: #303030 !important;
+    color: #ffffff !important;
+}
+.stTabs [data-baseweb="tab-highlight"] {
+    background: #ffffff !important;
+}
+div[data-baseweb="select"] > div {
+    background: #171717 !important;
     color: white !important;
+    border-color: #444444 !important;
+}
+.stTextInput input {
+    background: #171717 !important;
+    color: white !important;
+}
+hr {
+    border-color: #303030 !important;
+}
+[data-testid="stDataFrame"] {
+    border: 1px solid #303030;
+    border-radius: 10px;
 }
 .trade-card {
     background: #141414;
     border: 1px solid #383838;
-    border-radius: 18px;
-    padding: 23px;
-    margin: 12px 0 20px 0;
-}
-.trade-name {
-    color: #aaa;
-    font-size: 15px;
+    border-radius: 16px;
+    padding: 22px;
+    margin: 10px 0 18px 0;
 }
 .trade-direction {
     font-size: 42px;
@@ -88,10 +115,10 @@ div[data-testid="stMetricValue"] {
     margin: 5px 0;
 }
 .trade-price {
-    color: white;
     font-size: 32px;
-    font-weight: 800;
-    margin: 10px 0 22px 0;
+    font-weight: 850;
+    margin: 12px 0 20px 0;
+    color: white;
 }
 .trade-grid {
     display: grid;
@@ -100,60 +127,119 @@ div[data-testid="stMetricValue"] {
 }
 .trade-item {
     background: #202020;
-    border: 1px solid #333;
+    border: 1px solid #333333;
     border-radius: 10px;
     padding: 13px;
     min-width: 0;
 }
 .trade-label {
-    color: #aaa;
+    color: #999999;
     font-size: 11px;
 }
 .trade-value {
-    color: white;
+    color: #ffffff;
     font-size: 18px;
     font-weight: 750;
     margin-top: 5px;
     overflow-wrap: anywhere;
 }
 .section-heading {
-    font-size: 21px;
+    color: #ffffff;
+    font-size: 20px;
     font-weight: 800;
-    margin-top: 28px;
-    margin-bottom: 12px;
+    margin: 20px 0 12px 0;
 }
-.market-button {
-    color: white;
+.market-row {
+    background: #151515;
+    border: 1px solid #303030;
+    border-radius: 10px;
+    padding: 12px;
+    margin-bottom: 8px;
 }
-hr {
-    border-color: #333 !important;
+.small-muted {
+    color: #999999;
+    font-size: 12px;
+}
+@media (max-width: 600px) {
+    .block-container {
+        padding-left: 0.8rem;
+        padding-right: 0.8rem;
+    }
+    .trade-direction {
+        font-size: 36px;
+    }
+    .trade-price {
+        font-size: 27px;
+    }
+    .trade-value {
+        font-size: 16px;
+    }
 }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- AUTO REFRESH ----------------
+# =========================
+# YENİLEME
+# =========================
 
-st_autorefresh(interval=300000, key="auto_refresh")
+st_autorefresh(interval=300000, key="radar_refresh")
 
-# ---------------- SESSION HISTORY ----------------
+# =========================
+# OTURUM VERİLERİ
+# =========================
+
+if "selected_market" not in st.session_state:
+    st.session_state.selected_market = "EUR/USD"
 
 if "signal_history" not in st.session_state:
     st.session_state.signal_history = []
 
-if "last_saved_signals" not in st.session_state:
-    st.session_state.last_saved_signals = {}
+if "last_signatures" not in st.session_state:
+    st.session_state.last_signatures = {}
 
-# ---------------- DATA ----------------
+# =========================
+# YARDIMCI FONKSİYONLAR
+# =========================
+
+def fmt(value):
+    try:
+        if value is None or pd.isna(value):
+            return "—"
+        return f"{float(value):.5f}"
+    except (TypeError, ValueError):
+        return "—"
+
+
+def color_for(direction):
+    if direction == "LONG":
+        return "#35D394"
+    if direction == "SHORT":
+        return "#FF5C68"
+    return "#E8C65A"
+
+
+def get_market(name, data):
+    for item in data:
+        if item.get("market") == name:
+            return item
+    return None
+
+
+# =========================
+# PİYASA ANALİZİ
+# =========================
 
 @st.cache_data(ttl=240, show_spinner=False)
-def load_market_data():
+def load_results():
     output = []
 
     for name, symbol in MARKETS.items():
         try:
             result = analyze_market(name, symbol)
+
             if not isinstance(result, dict):
-                raise ValueError("Analiz sonucu geçersiz")
+                raise ValueError("Geçersiz analiz sonucu")
+
             output.append(result)
 
         except Exception as error:
@@ -166,263 +252,290 @@ def load_market_data():
 
     return output
 
+
+st.markdown("""
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;">
+    <div>
+        <div style="font-size:12px;letter-spacing:3px;color:#999;">
+            MARKET INTELLIGENCE
+        </div>
+        <div style="font-size:30px;font-weight:900;color:#ffffff;">
+            📡 FOREX RADAR
+        </div>
+        <div style="font-size:11px;color:#999;">
+            TEKNİK ANALİZ • HABERLER • RİSK TAKİBİ
+        </div>
+    </div>
+    <div style="background:#171717;border:1px solid #333;border-radius:8px;padding:9px 13px;color:#ddd;font-size:12px;">
+        ANALİZ PANELİ
+    </div>
+</div>
+""", unsafe_allow_html=True)
+
+st.write("")
+
 with st.spinner("Piyasalar analiz ediliyor..."):
-    results = load_market_data()
+    results = load_results()
 
 if not results:
-    st.error("Piyasa verisi alınamadı.")
+    st.error("Piyasa analizi alınamadı.")
     st.stop()
 
-valid_results = [
+valid = [
     x for x in results
     if x.get("status") == "OK"
 ]
 
-# ---------------- HISTORY SAVE ----------------
+# =========================
+# SİNYAL GEÇMİŞİ
+# =========================
 
-for item in valid_results:
+for item in valid:
     name = item.get("market", "")
-    direction = item.get("direction", "WAIT")
-    price = item.get("price")
+    signature = (
+        item.get("direction"),
+        item.get("price"),
+        item.get("score")
+    )
 
-    signature = (direction, price)
-    previous = st.session_state.last_saved_signals.get(name)
-
-    if signature != previous:
+    if st.session_state.last_signatures.get(name) != signature:
         st.session_state.signal_history.insert(0, {
             "Tarih": datetime.now().strftime("%d.%m.%Y %H:%M"),
             "Piyasa": name,
-            "İşlem": direction,
-            "Fiyat": price,
+            "İşlem": item.get("direction"),
+            "Fiyat": item.get("price"),
             "Puan": item.get("score", 0)
         })
-        st.session_state.last_saved_signals[name] = signature
+        st.session_state.last_signatures[name] = signature
 
 st.session_state.signal_history = (
     st.session_state.signal_history[:200]
 )
 
-# ---------------- HELPERS ----------------
+# =========================
+# ÜST MENÜ
+# =========================
 
-def fmt(value):
-    if value is None:
-        return "—"
-    try:
-        if pd.isna(value):
-            return "—"
-        return f"{float(value):.5f}"
-    except (TypeError, ValueError):
-        return "—"
-
-def get_result(name):
-    for item in results:
-        if item.get("market") == name:
-            return item
-    return None
-
-# ---------------- HEADER ----------------
-
-st.markdown("# FOREX RADAR")
-st.caption("Forex analiz ve işlem sinyali paneli")
-
-left, right = st.columns([3, 1])
-
-with left:
-    st.caption("Teknik analiz • Çoklu zaman dilimi • Risk takibi")
-
-with right:
-    st.caption("Son yenileme: " + datetime.now().strftime("%H:%M:%S"))
-
-st.divider()
-
-# ---------------- SELECTED MARKET ----------------
-
-market_names = list(MARKETS.keys())
-
-if "selected_market" not in st.session_state:
-    st.session_state.selected_market = (
-        "EUR/USD" if "EUR/USD" in market_names else market_names[0]
-    )
-
-selected = get_result(st.session_state.selected_market)
-
-if selected is None:
-    selected = results[0]
-    st.session_state.selected_market = selected.get("market")
-
-st.markdown(
-    '<div class="section-heading">ANA İŞLEM ANALİZİ</div>',
-    unsafe_allow_html=True
-)
-
-if selected.get("status") != "OK":
-    st.error(
-        "Bu paritenin fiyat verisi alınamadı. "
-        + str(selected.get("error", "Veri sağlayıcı hatası"))
-    )
-    st.info("Başka bir parite seçerek analizini kontrol edebilirsin.")
-
-else:
-    direction = selected.get("direction", "WAIT")
-
-    if direction == "LONG":
-        color = "#22c77a"
-        description = "ALIŞ YÖNLÜ SİNYAL"
-    elif direction == "SHORT":
-        color = "#ff5555"
-        description = "SATIŞ YÖNLÜ SİNYAL"
-    else:
-        color = "#bbbbbb"
-        description = "ŞU AN İŞLEM SİNYALİ YOK"
-
-    st.markdown(f"""
-    <div class="trade-card">
-        <div class="trade-name">{selected.get("market", "")}</div>
-        <div class="trade-direction" style="color:{color}">
-            {direction}
-        </div>
-        <div style="color:#aaa;font-size:13px">{description}</div>
-        <div class="trade-price">{fmt(selected.get("price"))}</div>
-        <div class="trade-grid">
-            <div class="trade-item">
-                <div class="trade-label">GİRİŞ FİYATI</div>
-                <div class="trade-value">{fmt(selected.get("price"))}</div>
-            </div>
-            <div class="trade-item">
-                <div class="trade-label">SİNYAL PUANI</div>
-                <div class="trade-value">{selected.get("score", 0)}/100</div>
-            </div>
-            <div class="trade-item">
-                <div class="trade-label">STOP LOSS</div>
-                <div class="trade-value">{fmt(selected.get("stop_loss"))}</div>
-            </div>
-            <div class="trade-item">
-                <div class="trade-label">HEDEF 1</div>
-                <div class="trade-value">{fmt(selected.get("tp1"))}</div>
-            </div>
-            <div class="trade-item">
-                <div class="trade-label">HEDEF 2</div>
-                <div class="trade-value">{fmt(selected.get("tp2"))}</div>
-            </div>
-            <div class="trade-item">
-                <div class="trade-label">RSI</div>
-                <div class="trade-value">{fmt(selected.get("rsi"))}</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-    if direction == "WAIT":
-        st.info("Şimdilik bekle. Sistem yeterli LONG veya SHORT koşulu bulamadı.")
-
-    st.caption(
-        "LONG = alış | SHORT = satış | WAIT = bekle. "
-        "Sinyal puanı kazanma ihtimali değildir."
-    )
-
-# ---------------- SUMMARY ----------------
-
-st.markdown(
-    '<div class="section-heading">PİYASA ÖZETİ</div>',
-    unsafe_allow_html=True
-)
-
-long_count = sum(
-    x.get("direction") == "LONG" for x in valid_results
-)
-short_count = sum(
-    x.get("direction") == "SHORT" for x in valid_results
-)
-wait_count = sum(
-    x.get("direction") == "WAIT" for x in results
-)
-
-a, b, c = st.columns(3)
-
-with a:
-    st.metric("ALIŞ SİNYALİ", long_count)
-
-with b:
-    st.metric("SATIŞ SİNYALİ", short_count)
-
-with c:
-    st.metric("BEKLEMEDE", wait_count)
-
-# ---------------- OTHER MARKETS ----------------
-
-st.markdown(
-    '<div class="section-heading">DİĞER PİYASALAR</div>',
-    unsafe_allow_html=True
-)
-st.caption("Bir pariteye dokunarak ana analiz kartını değiştirebilirsin.")
-
-other_results = [
-    x for x in results
-    if x.get("market") != st.session_state.selected_market
-]
-
-for i in range(0, len(other_results), 2):
-    cols = st.columns(2)
-
-    for j, item in enumerate(other_results[i:i+2]):
-        with cols[j]:
-            name = item.get("market", "")
-            direction = item.get("direction", "WAIT")
-
-            if direction == "LONG":
-                mark = "🟢"
-            elif direction == "SHORT":
-                mark = "🔴"
-            else:
-                mark = "⚪"
-
-            price_text = fmt(item.get("price"))
-            score = item.get("score", 0)
-
-            label = (
-                f"{mark} {name}  |  {direction}\n"
-                f"{price_text}  •  {score}/100"
-            )
-
-            if st.button(label, key="pair_" + name):
-                st.session_state.selected_market = name
-                st.rerun()
-
-# ---------------- TABS ----------------
-
-st.divider()
-
-tab_chart, tab_calendar, tab_history, tab_risk = st.tabs([
+tab_overview, tab_chart, tab_news, tab_history, tab_risk = st.tabs([
+    "GENEL BAKIŞ",
     "GRAFİK",
-    "EKONOMİK TAKVİM",
+    "HABERLER",
     "SİNYAL GEÇMİŞİ",
-    "RİSK ANALİZİ"
+    "RİSK"
 ])
 
-# ---------------- CHART ----------------
+# =========================
+# GENEL BAKIŞ
+# =========================
+
+with tab_overview:
+
+    st.markdown(
+        '<div class="section-heading">PİYASA DURUMU</div>',
+        unsafe_allow_html=True
+    )
+
+    long_count = sum(x.get("direction") == "LONG" for x in valid)
+    short_count = sum(x.get("direction") == "SHORT" for x in valid)
+    wait_count = sum(x.get("direction") == "WAIT" for x in results)
+
+    c1, c2, c3 = st.columns(3)
+
+    with c1:
+        st.metric("LONG", long_count)
+
+    with c2:
+        st.metric("SHORT", short_count)
+
+    with c3:
+        st.metric("WAIT", wait_count)
+
+    st.caption(
+        "LONG: alış yönü  •  SHORT: satış yönü  •  WAIT: bekle"
+    )
+
+    st.markdown(
+        '<div class="section-heading">ANA İŞLEM ANALİZİ</div>',
+        unsafe_allow_html=True
+    )
+
+    market_names = list(MARKETS.keys())
+
+    if st.session_state.selected_market not in market_names:
+        st.session_state.selected_market = market_names[0]
+
+    selected = get_market(st.session_state.selected_market, results)
+
+    if selected is None:
+        st.warning("Seçili piyasa bulunamadı.")
+    elif selected.get("status") != "OK":
+        st.error(
+            "Bu piyasanın verisi alınamadı: "
+            + str(selected.get("error", "Bilinmeyen hata"))
+        )
+    else:
+        direction = selected.get("direction", "WAIT")
+        color = color_for(direction)
+
+        if direction == "LONG":
+            description = "ALIŞ YÖNLÜ SİNYAL"
+        elif direction == "SHORT":
+            description = "SATIŞ YÖNLÜ SİNYAL"
+        else:
+            description = "ŞU AN İŞLEM SİNYALİ YOK"
+
+        st.markdown(f"""
+        <div class="trade-card">
+            <div style="font-size:13px;color:#999;">
+                SEÇİLİ PİYASA
+            </div>
+            <div style="font-size:22px;font-weight:800;color:white;">
+                {selected.get("market", "")}
+            </div>
+            <div class="trade-direction" style="color:{color};">
+                {direction}
+            </div>
+            <div style="font-size:12px;color:#999;">
+                {description}
+            </div>
+            <div class="trade-price">
+                {fmt(selected.get("price"))}
+            </div>
+            <div class="trade-grid">
+                <div class="trade-item">
+                    <div class="trade-label">GİRİŞ FİYATI</div>
+                    <div class="trade-value">{fmt(selected.get("price"))}</div>
+                </div>
+                <div class="trade-item">
+                    <div class="trade-label">SİNYAL PUANI</div>
+                    <div class="trade-value">{selected.get("score", 0)}/100</div>
+                </div>
+                <div class="trade-item">
+                    <div class="trade-label">STOP LOSS</div>
+                    <div class="trade-value">{fmt(selected.get("stop_loss"))}</div>
+                </div>
+                <div class="trade-item">
+                    <div class="trade-label">HEDEF 1</div>
+                    <div class="trade-value">{fmt(selected.get("tp1"))}</div>
+                </div>
+                <div class="trade-item">
+                    <div class="trade-label">HEDEF 2</div>
+                    <div class="trade-value">{fmt(selected.get("tp2"))}</div>
+                </div>
+                <div class="trade-item">
+                    <div class="trade-label">RSI</div>
+                    <div class="trade-value">{fmt(selected.get("rsi"))}</div>
+                </div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        if direction == "WAIT":
+            st.info("Şu an yeterli işlem koşulu yok. Beklemede kal.")
+
+        st.caption(
+            "Sinyal puanı başarı olasılığı değildir. "
+            "Bu panel otomatik emir göndermez."
+        )
+
+    st.markdown(
+        '<div class="section-heading">DİĞER PİYASALAR</div>',
+        unsafe_allow_html=True
+    )
+
+    st.caption("Bir piyasayı seçerek ana işlem kartında görüntüleyebilirsin.")
+
+    other = [
+        x for x in results
+        if x.get("market") != st.session_state.selected_market
+    ]
+
+    for i in range(0, len(other), 2):
+        cols = st.columns(2)
+
+        for j, item in enumerate(other[i:i+2]):
+            with cols[j]:
+                name = item.get("market", "")
+                direction = item.get("direction", "WAIT")
+                color = color_for(direction)
+
+                if direction == "LONG":
+                    icon = "🟢"
+                elif direction == "SHORT":
+                    icon = "🔴"
+                else:
+                    icon = "🟡"
+
+                st.markdown(f"""
+                <div class="market-row">
+                    <div style="font-weight:800;color:#fff;">
+                        {icon} {name}
+                    </div>
+                    <div style="color:{color};font-weight:800;margin-top:5px;">
+                        {direction}
+                    </div>
+                    <div style="font-size:12px;color:#aaa;margin-top:4px;">
+                        Fiyat: {fmt(item.get("price"))}
+                        &nbsp; | &nbsp;
+                        Puan: {item.get("score", 0)}/100
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+
+                if st.button("PİYASAYI GÖR", key="select_" + name):
+                    st.session_state.selected_market = name
+                    st.rerun()
+
+# =========================
+# GRAFİK
+# =========================
 
 with tab_chart:
-    st.subheader("Fiyat grafiği")
+
+    st.markdown(
+        '<div class="section-heading">TEKNİK GRAFİK ANALİZİ</div>',
+        unsafe_allow_html=True
+    )
+
+    market_names = list(MARKETS.keys())
 
     chart_market = st.selectbox(
-        "Parite seç",
+        "Piyasa seç",
         market_names,
-        index=market_names.index(st.session_state.selected_market)
+        index=market_names.index(st.session_state.selected_market),
+        key="chart_pair"
     )
+
+    timeframe = st.selectbox(
+        "Zaman dilimi",
+        ["5m", "15m", "30m", "1h", "1d"],
+        index=1
+    )
+
+    period_map = {
+        "5m": "5d",
+        "15m": "5d",
+        "30m": "1mo",
+        "1h": "1mo",
+        "1d": "6mo"
+    }
 
     try:
         chart_data = yf.Ticker(
             MARKETS[chart_market]
-        ).history(period="5d", interval="15m")
+        ).history(
+            period=period_map[timeframe],
+            interval=timeframe
+        )
 
         if chart_data.empty:
-            st.warning("Grafik verisi bulunamadı.")
+            st.warning("Bu piyasa için grafik verisi bulunamadı.")
         else:
             chart_data["EMA20"] = (
-                chart_data["Close"].ewm(span=20).mean()
+                chart_data["Close"].ewm(span=20, adjust=False).mean()
             )
             chart_data["EMA50"] = (
-                chart_data["Close"].ewm(span=50).mean()
+                chart_data["Close"].ewm(span=50, adjust=False).mean()
             )
 
             fig = go.Figure()
@@ -450,22 +563,34 @@ with tab_chart:
 
             fig.update_layout(
                 template="plotly_dark",
-                paper_bgcolor="#090909",
-                plot_bgcolor="#090909",
-                height=450,
-                xaxis_rangeslider_visible=False
+                paper_bgcolor="#080808",
+                plot_bgcolor="#111111",
+                font_color="white",
+                height=520,
+                xaxis_rangeslider_visible=False,
+                margin=dict(l=10, r=10, t=30, b=10)
             )
 
             st.plotly_chart(fig, use_container_width=True)
 
     except Exception as error:
-        st.warning("Grafik yüklenemedi: " + str(error))
+        st.error("Grafik yüklenemedi: " + str(error))
 
-# ---------------- ECONOMIC CALENDAR ----------------
+# =========================
+# HABERLER
+# =========================
 
-with tab_calendar:
-    st.subheader("Ekonomik takvim")
-    st.caption("Takvim kaynağı: Forex Factory XML")
+with tab_news:
+
+    st.markdown(
+        '<div class="section-heading">EKONOMİK TAKVİM VE HABERLER</div>',
+        unsafe_allow_html=True
+    )
+
+    st.caption(
+        "Forex Factory XML takvimi. Kaynakta veri bulunmaması "
+        "veya bağlantı hatası yaşanması mümkündür."
+    )
 
     try:
         response = requests.get(
@@ -483,7 +608,7 @@ with tab_calendar:
                 "Tarih": event.findtext("date", ""),
                 "Saat": event.findtext("time", ""),
                 "Ülke": event.findtext("country", ""),
-                "Etkinlik": event.findtext("title", ""),
+                "Haber": event.findtext("title", ""),
                 "Önem": event.findtext("impact", ""),
                 "Tahmin": event.findtext("forecast", ""),
                 "Önceki": event.findtext("previous", "")
@@ -499,12 +624,18 @@ with tab_calendar:
             st.info("Takvimde etkinlik bulunamadı.")
 
     except Exception as error:
-        st.warning("Ekonomik takvim yüklenemedi: " + str(error))
+        st.warning("Takvim alınamadı: " + str(error))
 
-# ---------------- HISTORY ----------------
+# =========================
+# SİNYAL GEÇMİŞİ
+# =========================
 
 with tab_history:
-    st.subheader("Sinyal geçmişi")
+
+    st.markdown(
+        '<div class="section-heading">SİNYAL GEÇMİŞİ</div>',
+        unsafe_allow_html=True
+    )
 
     history = st.session_state.signal_history
 
@@ -515,51 +646,77 @@ with tab_history:
             hide_index=True
         )
     else:
-        st.info("Henüz sinyal kaydı oluşmadı.")
+        st.info("Henüz sinyal kaydı bulunmuyor.")
 
     st.caption(
-        "Geçmiş yalnızca bu açık oturum boyunca saklanır. "
-        "Gerçekleşmiş kâr/zarar performansı değildir."
+        "Bu kayıtlar açık oturum boyunca saklanır. "
+        "Gerçekleşmiş işlem sonucu veya kâr oranı değildir."
     )
 
-# ---------------- RISK ----------------
+# =========================
+# RİSK
+# =========================
 
 with tab_risk:
-    st.subheader("Risk analizi")
 
-    if selected.get("status") == "OK":
-        atr = selected.get("atr")
-        price = selected.get("price")
+    st.markdown(
+        '<div class="section-heading">RİSK VE OYNAKLIK ANALİZİ</div>',
+        unsafe_allow_html=True
+    )
 
-        st.write("**Piyasa:**", selected.get("market"))
-        st.write("**İşlem yönü:**", selected.get("direction"))
-        st.write("**Fiyat:**", fmt(price))
-        st.write("**ATR:**", fmt(atr))
+    risk_market = st.selectbox(
+        "Risk analizi yapılacak piyasa",
+        list(MARKETS.keys()),
+        index=list(MARKETS.keys()).index(
+            st.session_state.selected_market
+        ),
+        key="risk_pair"
+    )
+
+    risk_data = get_market(risk_market, results)
+
+    if risk_data and risk_data.get("status") == "OK":
+
+        st.write("**Piyasa:**", risk_market)
+        st.write("**İşlem yönü:**", risk_data.get("direction"))
+        st.write("**Güncel fiyat:**", fmt(risk_data.get("price")))
+        st.write("**ATR:**", fmt(risk_data.get("atr")))
+        st.write("**Destek:**", fmt(risk_data.get("support")))
+        st.write("**Direnç:**", fmt(risk_data.get("resistance")))
 
         try:
-            if atr and price:
-                percentage = float(atr) / float(price) * 100
-                st.metric("ATR / Fiyat", f"%{percentage:.3f}")
+            atr = float(risk_data.get("atr"))
+            price = float(risk_data.get("price"))
+
+            if atr > 0 and price > 0:
+                st.metric(
+                    "ATR / FİYAT",
+                    f"%{(atr / price) * 100:.3f}"
+                )
         except (TypeError, ValueError, ZeroDivisionError):
             st.info("Oynaklık oranı hesaplanamadı.")
 
     else:
-        st.warning("Risk analizi için geçerli piyasa verisi bulunamadı.")
+        st.warning("Bu piyasa için risk verisi alınamadı.")
 
     st.info(
-        "ATR fiyat hareketliliğini ölçer. Yüksek ATR daha geniş fiyat "
-        "hareketleri anlamına gelebilir."
+        "ATR fiyat hareketliliğini ölçer. Yüksek ATR daha geniş "
+        "fiyat hareketleri anlamına gelebilir."
     )
 
     st.warning(
-        "Bu sistem otomatik emir açmaz. LONG ve SHORT sinyalleri "
-        "garantili kazanç değildir."
+        "Bu sistem otomatik emir açmaz. Stop-loss ve hedef seviyeleri "
+        "analiz referansıdır; garanti sonuç değildir."
     )
 
-# ---------------- FOOTER ----------------
+# =========================
+# ALT BİLGİ
+# =========================
 
 st.divider()
+
 st.caption(
-    "FOREX RADAR • Analiz amaçlıdır. "
-    "Fiyat verileri Yahoo Finance üzerinden gelebilir ve gecikmeli olabilir."
+    "FOREX RADAR | Analiz amaçlıdır. "
+    "Veriler Yahoo Finance üzerinden gelebilir ve gecikmeli olabilir. "
+    "Sinyaller yatırım tavsiyesi veya garanti kazanç değildir."
 )

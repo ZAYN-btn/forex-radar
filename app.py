@@ -13,62 +13,146 @@ from streamlit_autorefresh import st_autorefresh
 
 from forex_engine import MARKETS, analyze_market
 
+
+# ==========================================
+# SAYFA AYARLARI
+# ==========================================
+
 st.set_page_config(
     page_title="FOREX RADAR PRO",
-    page_icon="📡",
-    layout="wide"
+    page_icon="◈",
+    layout="wide",
+    initial_sidebar_state="collapsed"
 )
 
 DB = Path("forex_history.db")
 
-# ---------------- STYLE ----------------
+
+# ==========================================
+# SİYAH - BEYAZ TASARIM
+# ==========================================
 
 st.markdown("""
 <style>
-.stApp {background:#101722;color:#F1F5F9;}
-.block-container {max-width:1400px;padding-top:1.5rem;}
-header[data-testid="stHeader"] {background:transparent;}
+.stApp {
+    background: #050505;
+    color: #FFFFFF;
+}
+
+.block-container {
+    max-width: 1250px;
+    padding-top: 1.2rem;
+    padding-bottom: 2rem;
+}
+
+header[data-testid="stHeader"] {
+    background: #050505;
+}
+
+h1, h2, h3, h4, p, label, span {
+    color: #FFFFFF;
+}
+
+.main-card {
+    background: #111111;
+    border: 1px solid #383838;
+    border-radius: 16px;
+    padding: 22px;
+    margin-bottom: 15px;
+}
+
+.market-row {
+    background: #111111;
+    border: 1px solid #303030;
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 5px;
+}
+
+.big-price {
+    font-size: 35px;
+    font-weight: 850;
+    color: #FFFFFF;
+}
+
+.muted {
+    color: #999999 !important;
+    font-size: 12px;
+}
+
+.signal-label {
+    background: #222222;
+    border: 1px solid #555555;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 800;
+}
 
 div[data-testid="stMetric"] {
-    background:#1B2736;
-    border:1px solid #34445A;
-    border-radius:12px;
-    padding:13px;
+    background: #111111;
+    border: 1px solid #303030;
+    border-radius: 11px;
+    padding: 12px;
 }
 
-div[data-testid="stMetricLabel"] {color:#C3D0E0 !important;}
-div[data-testid="stMetricValue"] {color:white !important;}
-
-.market-card {
-    background:#1B2736;
-    border:1px solid #34445A;
-    border-radius:14px;
-    padding:17px;
-    margin-bottom:12px;
+div[data-testid="stMetricLabel"] {
+    color: #AAAAAA !important;
 }
 
-.long {color:#36E0A1;font-weight:800;}
-.short {color:#FF7888;font-weight:800;}
-.wait {color:#FFD166;font-weight:800;}
-.muted {color:#B6C4D6;font-size:13px;}
-.price {font-size:27px;font-weight:800;color:white;}
+div[data-testid="stMetricValue"] {
+    color: #FFFFFF !important;
+}
 
 .stButton button {
-    background:#36D9A0;
-    color:#10231D;
-    border:0;
-    border-radius:9px;
-    font-weight:800;
+    background: #151515;
+    color: #FFFFFF;
+    border: 1px solid #444444;
+    border-radius: 9px;
+    font-weight: 700;
+    text-align: left;
 }
 
-h1,h2,h3,p,label {color:#F1F5F9;}
+.stButton button:hover {
+    background: #292929;
+    color: white;
+    border-color: white;
+}
+
+div[data-testid="stTabs"] button {
+    color: white;
+}
+
+div[data-testid="stExpander"] {
+    background: #111111;
+    border: 1px solid #333333;
+    border-radius: 10px;
+}
+
+[data-testid="stDataFrame"] {
+    border: 1px solid #333333;
+    border-radius: 10px;
+}
+
+hr {
+    border-color: #333333;
+}
+
+footer {
+    visibility: hidden;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- DATABASE ----------------
+
+# ==========================================
+# VERİ TABANI
+# ==========================================
 
 def connect_db():
     return sqlite3.connect(DB)
+
 
 def init_db():
     with connect_db() as con:
@@ -86,21 +170,24 @@ def init_db():
         )
         """)
 
+
 init_db()
+
 
 def save_signals(results):
     with connect_db() as con:
-        for x in results:
-            if x.get("status") != "OK":
+        for item in results:
+
+            if item.get("status") != "OK":
                 continue
 
-            if x["direction"] not in ("LONG", "SHORT"):
+            if item["direction"] not in ("LONG", "SHORT"):
                 continue
 
             active = con.execute("""
                 SELECT id FROM signals
                 WHERE market=? AND status='ACTIVE'
-            """, (x["market"],)).fetchone()
+            """, (item["market"],)).fetchone()
 
             if active:
                 continue
@@ -111,34 +198,39 @@ def save_signals(results):
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 datetime.now(timezone.utc).isoformat(),
-                x["market"],
-                x["direction"],
-                x["price"],
-                x["stop_loss"],
-                x["tp1"],
-                x["tp2"]
+                item["market"],
+                item["direction"],
+                item["price"],
+                item["stop_loss"],
+                item["tp1"],
+                item["tp2"]
             ))
+
 
 def update_signals(results):
     current = {
-        x["market"]: x
-        for x in results
-        if x.get("status") == "OK"
+        item["market"]: item
+        for item in results
+        if item.get("status") == "OK"
     }
 
     with connect_db() as con:
+
         rows = con.execute("""
             SELECT id, market, direction, sl, tp1, tp2
-            FROM signals WHERE status='ACTIVE'
+            FROM signals
+            WHERE status='ACTIVE'
         """).fetchall()
 
         for row in rows:
+
             sid, market, direction, sl, tp1, tp2 = row
 
             if market not in current:
                 continue
 
             item = current[market]
+
             high = item["bar_high"]
             low = item["bar_low"]
 
@@ -168,6 +260,7 @@ def update_signals(results):
                     (status, sid)
                 )
 
+
 def get_history():
     with connect_db() as con:
         return pd.read_sql_query(
@@ -175,7 +268,10 @@ def get_history():
             con
         )
 
-# ---------------- DATA ----------------
+
+# ==========================================
+# PİYASA VERİLERİ
+# ==========================================
 
 @st.cache_data(ttl=240)
 def load_results():
@@ -184,177 +280,363 @@ def load_results():
         for name, symbol in MARKETS.items()
     ]
 
+
 results = load_results()
 
 save_signals(results)
 update_signals(results)
 
-# ---------------- HEADER ----------------
+valid = [
+    item for item in results
+    if item.get("status") == "OK"
+]
+
+
+# ==========================================
+# EN GÜÇLÜ SİNYALİ BUL
+# ==========================================
+
+signal_results = [
+    item for item in valid
+    if item["direction"] in ("LONG", "SHORT")
+]
+
+signal_results.sort(
+    key=lambda x: x["score"],
+    reverse=True
+)
+
+if "selected_market" not in st.session_state:
+
+    if signal_results:
+        st.session_state.selected_market = (
+            signal_results[0]["market"]
+        )
+    else:
+        st.session_state.selected_market = "EUR/USD"
+
+
+selected_market = st.session_state.selected_market
+
+selected = next(
+    (
+        item for item in results
+        if item["market"] == selected_market
+    ),
+    None
+)
+
+
+# ==========================================
+# OTOMATİK YENİLEME
+# ==========================================
+
+st_autorefresh(
+    interval=300000,
+    key="forex_refresh"
+)
+
+
+# ==========================================
+# ÜST BAŞLIK
+# ==========================================
 
 st.markdown("""
-<div class="market-card">
-<div style="color:#36E0A1;letter-spacing:3px;font-size:12px;">
+<div style="
+background:#111111;
+border:1px solid #383838;
+border-radius:14px;
+padding:17px;
+margin-bottom:18px;
+">
+<div style="
+font-size:11px;
+letter-spacing:3px;
+color:#AAAAAA;
+">
 MARKET INTELLIGENCE
 </div>
-<div style="font-size:30px;font-weight:800;">
-📡 FOREX RADAR <span style="color:#36E0A1;">PRO</span>
+
+<div style="
+font-size:29px;
+font-weight:900;
+color:white;
+">
+◈ FOREX RADAR
 </div>
-<div class="muted">
-19 PİYASA • TEKNİK ANALİZ • HABERLER • RİSK TAKİBİ
+
+<div style="font-size:12px;color:#999999;">
+19 PİYASA · TEKNİK ANALİZ · SİNYAL TAKİBİ
 </div>
 </div>
 """, unsafe_allow_html=True)
 
-# 5 dakikada bir sayfayı yenile
-refresh_count = st_autorefresh(
-    interval=300000,
-    key="forex_auto_refresh"
-)
+left, right = st.columns([3, 1])
 
-st.caption(
-    "Son güncelleme: " +
-    datetime.now().strftime("%d.%m.%Y %H:%M:%S")
-)
+with left:
+    st.caption(
+        "Son güncelleme: "
+        + datetime.now().strftime("%d.%m.%Y %H:%M")
+    )
 
-if st.button("🔄 Şimdi yenile"):
-    st.cache_data.clear()
-    st.rerun()
+with right:
+    if st.button("YENİLE", use_container_width=True):
+        st.cache_data.clear()
+        st.rerun()
 
-# ---------------- MENU ----------------
+
+# ==========================================
+# MENÜ
+# ==========================================
 
 tabs = st.tabs([
-    "📊 Genel Bakış",
-    "📈 Grafikler",
-    "📰 Haberler",
-    "📚 Sinyal Geçmişi",
-    "🛡️ Risk Analizi"
+    "PİYASALAR",
+    "GRAFİK",
+    "HABERLER",
+    "GEÇMİŞ"
 ])
 
-# ---------------- OVERVIEW ----------------
+
+# ==========================================
+# 1. PİYASALAR
+# ==========================================
 
 with tabs[0]:
 
-    st.header("Piyasa genel görünümü")
-
-    valid = [
-        x for x in results if x.get("status") == "OK"
-    ]
+    st.markdown("### Piyasa özeti")
 
     long_count = sum(
         x["direction"] == "LONG" for x in valid
     )
+
     short_count = sum(
         x["direction"] == "SHORT" for x in valid
     )
+
     wait_count = sum(
         x["direction"] == "WAIT" for x in valid
     )
 
-    a,b,c,d = st.columns(4)
-    a.metric("Toplam piyasa", len(MARKETS))
-    b.metric("LONG", long_count)
-    c.metric("SHORT", short_count)
-    d.metric("WAIT", wait_count)
+    a, b, c = st.columns(3)
 
-    st.subheader("İşlem yönleri")
+    a.metric("LONG", long_count)
+    b.metric("SHORT", short_count)
+    c.metric("WAIT", wait_count)
 
-    for item in results:
+    st.divider()
 
-        if item.get("status") != "OK":
-            st.warning(
-                item["market"] + ": " +
-                item.get("error", "Veri alınamadı")
+    # ANA PARİTE
+
+    st.markdown("### Seçili piyasa")
+
+    if selected is None or selected.get("status") != "OK":
+
+        st.error(
+            "Bu piyasa için şu anda güvenilir veri alınamıyor."
+        )
+
+    else:
+
+        direction = selected["direction"]
+
+        st.markdown(
+            f"""
+            <div class="main-card">
+                <div style="font-size:13px;color:#999999;">
+                    PİYASA ANALİZİ
+                </div>
+                <div style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center;
+                    margin-top:8px;
+                ">
+                    <div style="font-size:23px;font-weight:850;">
+                        {selected["market"]}
+                    </div>
+                    <div class="signal-label">
+                        {direction}
+                    </div>
+                </div>
+                <div class="big-price">
+                    {selected["price"]:.5f}
+                </div>
+                <div class="muted">
+                    Teknik uyum puanı: {selected["score"]}/100
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.progress(
+            min(selected["score"], 100) / 100
+        )
+
+        a, b, c = st.columns(3)
+
+        a.metric("5 DAKİKA", selected["trend5"])
+        b.metric("15 DAKİKA", selected["trend15"])
+        c.metric("1 SAAT", selected["trend1"])
+
+        if direction in ("LONG", "SHORT"):
+
+            st.markdown("#### İşlem seviyeleri")
+
+            a, b = st.columns(2)
+
+            a.metric(
+                "Giriş referansı",
+                f'{selected["price"]:.5f}'
             )
-            continue
 
-        direction = item["direction"]
-        color = {
-            "LONG":"#36E0A1",
-            "SHORT":"#FF7888",
-            "WAIT":"#FFD166"
-        }[direction]
+            b.metric(
+                "Stop Loss",
+                f'{selected["stop_loss"]:.5f}'
+            )
 
-        st.markdown(f"""
-        <div class="market-card">
-        <div style="display:flex;justify-content:space-between;">
-        <b style="font-size:21px;">{item["market"]}</b>
-        <b style="color:{color};font-size:19px;">{direction}</b>
-        </div>
-        <div class="price">{item["price"]:.5f}</div>
-        <div class="muted">
-        Teknik uyum puanı: {item["score"]}/100
-        </div>
-        </div>
-        """, unsafe_allow_html=True)
+            a, b = st.columns(2)
 
-        a,b,c = st.columns(3)
-        a.metric("5 DAKİKA",item["trend5"])
-        b.metric("15 DAKİKA",item["trend15"])
-        c.metric("1 SAAT",item["trend1"])
+            a.metric(
+                "Take Profit 1",
+                f'{selected["tp1"]:.5f}'
+            )
 
-        a,b,c = st.columns(3)
-        a.metric("RSI",f'{item["rsi"]:.2f}')
-        b.metric("ATR",f'{item["atr"]:.5f}')
-        c.metric("Veri yaşı",f'{item["data_age"]:.1f} dk')
+            b.metric(
+                "Take Profit 2",
+                f'{selected["tp2"]:.5f}'
+            )
 
-        a,b = st.columns(2)
-        a.metric(
-            "Destek",
-            f'{item["support"]:.5f}'
-            if item["support"] is not None else "—"
-        )
-        b.metric(
-            "Direnç",
-            f'{item["resistance"]:.5f}'
-            if item["resistance"] is not None else "—"
-        )
+        else:
+            st.info(
+                "Şu anda yeterli teknik uyum yok. "
+                "Beklemek daha mantıklı olabilir."
+            )
 
-        if direction != "WAIT":
-            st.markdown("**İşlem önerisi seviyeleri**")
-            st.dataframe(pd.DataFrame([
-                {"Seviye":"Giriş referansı","Fiyat":item["price"]},
-                {"Seviye":"Stop Loss","Fiyat":item["stop_loss"]},
-                {"Seviye":"TP1","Fiyat":item["tp1"]},
-                {"Seviye":"TP2","Fiyat":item["tp2"]}
-            ]),use_container_width=True,hide_index=True)
+        with st.expander("Teknik detayları göster"):
 
-        st.divider()
+            a, b = st.columns(2)
+
+            a.metric("RSI", f'{selected["rsi"]:.2f}')
+            b.metric("ATR", f'{selected["atr"]:.5f}')
+
+            a, b = st.columns(2)
+
+            a.metric(
+                "Destek",
+                f'{selected["support"]:.5f}'
+                if selected["support"] is not None
+                else "Bulunamadı"
+            )
+
+            b.metric(
+                "Direnç",
+                f'{selected["resistance"]:.5f}'
+                if selected["resistance"] is not None
+                else "Bulunamadı"
+            )
+
+            st.caption(
+                f'Veri yaşı: {selected["data_age"]} dakika'
+            )
+
+    # DİĞER PİYASALAR
+
+    st.divider()
+
+    st.markdown("### Diğer piyasalar")
 
     st.caption(
-        "Uyum puanı kazanma olasılığı değildir. "
-        "Fiyatlar gecikmeli olabilir."
+        "Bir piyasaya dokunarak ana analiz ekranına geçebilirsin."
     )
 
-# ---------------- CHARTS ----------------
+    other_results = [
+        item for item in results
+        if item["market"] != selected_market
+    ]
+
+    other_results.sort(
+        key=lambda x: (
+            x.get("status") != "OK",
+            -x.get("score", 0)
+        )
+    )
+
+    columns = st.columns(2)
+
+    for index, item in enumerate(other_results):
+
+        col = columns[index % 2]
+
+        if item.get("status") != "OK":
+
+            label = (
+                f'{item["market"]}  |  VERİ YOK'
+            )
+
+        else:
+
+            label = (
+                f'{item["market"]}  |  '
+                f'{item["price"]:.5f}  |  '
+                f'{item["direction"]}'
+            )
+
+        with col:
+
+            if st.button(
+                label,
+                key=f'choose_{item["market"]}',
+                use_container_width=True
+            ):
+
+                st.session_state.selected_market = (
+                    item["market"]
+                )
+
+                st.rerun()
+
+    st.caption(
+        "Teknik uyum puanı kazanma olasılığı değildir. "
+        "Sinyaller kesin işlem tavsiyesi değildir."
+    )
+
+
+# ==========================================
+# 2. GRAFİK
+# ==========================================
 
 with tabs[1]:
 
-    st.header("Teknik grafikler")
+    st.markdown("### Piyasa grafiği")
 
-    market = st.selectbox(
-        "Piyasa",
+    chart_market = st.selectbox(
+        "Parite seç",
         list(MARKETS.keys()),
-        key="chart_market"
+        index=list(MARKETS.keys()).index(
+            selected_market
+        ) if selected_market in MARKETS else 0
     )
 
     timeframe = st.selectbox(
         "Zaman dilimi",
-        ["5m","15m","1h","1d"],
-        format_func=lambda x:{
-            "5m":"5 dakika",
-            "15m":"15 dakika",
-            "1h":"1 saat",
-            "1d":"1 gün"
+        ["5m", "15m", "1h", "1d"],
+        format_func=lambda x: {
+            "5m": "5 dakika",
+            "15m": "15 dakika",
+            "1h": "1 saat",
+            "1d": "1 gün"
         }[x]
     )
 
     @st.cache_data(ttl=240)
     def get_chart(symbol, interval):
+
         periods = {
-            "5m":"5d",
-            "15m":"10d",
-            "1h":"30d",
-            "1d":"1y"
+            "5m": "5d",
+            "15m": "10d",
+            "1h": "30d",
+            "1d": "1y"
         }
 
         return yf.Ticker(symbol).history(
@@ -364,17 +646,26 @@ with tabs[1]:
         )
 
     try:
-        df = get_chart(MARKETS[market],timeframe)
+
+        df = get_chart(
+            MARKETS[chart_market],
+            timeframe
+        )
 
         if df.empty:
+
             st.warning("Grafik verisi bulunamadı.")
+
         else:
+
             df["EMA20"] = df["Close"].ewm(
-                span=20,adjust=False
+                span=20,
+                adjust=False
             ).mean()
 
             df["EMA50"] = df["Close"].ewm(
-                span=50,adjust=False
+                span=50,
+                adjust=False
             ).mean()
 
             fig = go.Figure()
@@ -385,31 +676,29 @@ with tabs[1]:
                 high=df["High"],
                 low=df["Low"],
                 close=df["Close"],
-                name="Fiyat",
-                increasing_line_color="#36E0A1",
-                decreasing_line_color="#FF7888"
+                name="Fiyat"
             ))
 
             fig.add_trace(go.Scatter(
                 x=df.index,
                 y=df["EMA20"],
-                name="EMA20",
-                line=dict(color="#FFD166")
+                name="EMA20"
             ))
 
             fig.add_trace(go.Scatter(
                 x=df.index,
                 y=df["EMA50"],
-                name="EMA50",
-                line=dict(color="#66A8FF")
+                name="EMA50"
             ))
 
             fig.update_layout(
                 template="plotly_dark",
-                height=520,
-                paper_bgcolor="#101722",
-                plot_bgcolor="#101722",
-                xaxis_rangeslider_visible=False
+                height=480,
+                paper_bgcolor="#050505",
+                plot_bgcolor="#050505",
+                font=dict(color="white"),
+                xaxis_rangeslider_visible=False,
+                margin=dict(l=10, r=10, t=30, b=10)
             )
 
             st.plotly_chart(
@@ -418,21 +707,25 @@ with tabs[1]:
             )
 
     except Exception as e:
-        st.error("Grafik hatası: " + str(e))
 
-# ---------------- NEWS ----------------
+        st.error("Grafik yüklenemedi: " + str(e))
+
+
+# ==========================================
+# 3. HABERLER
+# ==========================================
 
 with tabs[2]:
 
-    st.header("Ekonomik haber takvimi")
+    st.markdown("### Ekonomik haber takvimi")
 
     st.caption(
-        "Forex Factory XML takvimi. Kaynak erişimi ve "
-        "veri güncelliği ayrıca kontrol edilmelidir."
+        "Forex Factory ekonomik takvim kaynağı."
     )
 
     @st.cache_data(ttl=900)
     def get_news():
+
         url = (
             "https://nfs.faireconomy.media/"
             "ff_calendar_thisweek.xml"
@@ -441,21 +734,25 @@ with tabs[2]:
         response = requests.get(
             url,
             timeout=20,
-            headers={"User-Agent":"Mozilla/5.0"}
+            headers={"User-Agent": "Mozilla/5.0"}
         )
 
         response.raise_for_status()
 
         root = ET.fromstring(response.content)
+
         rows = []
 
         for event in root.findall(".//event"):
+
             item = {}
 
             for child in event:
+
                 item[child.tag] = (
                     child.text.strip()
-                    if child.text else ""
+                    if child.text
+                    else ""
                 )
 
             rows.append(item)
@@ -463,20 +760,24 @@ with tabs[2]:
         return pd.DataFrame(rows)
 
     try:
+
         news = get_news()
 
         if news.empty:
-            st.info("Haber bulunamadı.")
+
+            st.info("Şu anda haber bulunamadı.")
+
         else:
+
             rename = {
-                "title":"Haber",
-                "country":"Para birimi",
-                "date":"Tarih",
-                "time":"Saat",
-                "impact":"Önem",
-                "forecast":"Beklenti",
-                "previous":"Önceki",
-                "actual":"Gerçekleşen"
+                "title": "Haber",
+                "country": "Para birimi",
+                "date": "Tarih",
+                "time": "Saat",
+                "impact": "Önem",
+                "forecast": "Beklenti",
+                "previous": "Önceki",
+                "actual": "Gerçekleşen"
             }
 
             news = news.rename(columns=rename)
@@ -493,7 +794,8 @@ with tabs[2]:
             ]
 
             columns = [
-                x for x in wanted if x in news.columns
+                x for x in wanted
+                if x in news.columns
             ]
 
             st.dataframe(
@@ -503,53 +805,76 @@ with tabs[2]:
             )
 
     except Exception as e:
+
         st.error(
-            "Haber kaynağına erişilemiyor. "
-            "Haber verisi şu an doğrulanamadı."
+            "Haber kaynağına şu anda erişilemiyor."
         )
+
         st.caption(str(e))
 
     st.warning(
-        "Haber takvimi şu an bilgilendirme amaçlıdır. "
-        "Haber öncesi otomatik işlem engelleme henüz aktif değildir."
+        "Haberler bilgilendirme amaçlıdır. "
+        "Haber öncesi otomatik sinyal engellemesi henüz aktif değildir."
     )
 
-# ---------------- HISTORY ----------------
+
+# ==========================================
+# 4. SİNYAL GEÇMİŞİ
+# ==========================================
 
 with tabs[3]:
 
-    st.header("Sinyal geçmişi")
+    st.markdown("### Sinyal geçmişi")
 
     history = get_history()
 
     if history.empty:
-        st.info("Henüz sinyal geçmişi oluşmadı.")
-    else:
-        total = len(history)
-        tp = history["status"].isin(["TP1","TP2"]).sum()
-        sl = (history["status"]=="SL").sum()
-        active = (history["status"]=="ACTIVE").sum()
-        ambiguous = (history["status"]=="AMBIGUOUS").sum()
 
-        a,b,c,d = st.columns(4)
-        a.metric("Toplam",total)
-        b.metric("Hedef",int(tp))
-        c.metric("Stop",int(sl))
-        d.metric("Aktif",int(active))
+        st.info("Henüz kayıtlı sinyal bulunmuyor.")
+
+    else:
+
+        total = len(history)
+
+        tp = history["status"].isin(
+            ["TP1", "TP2"]
+        ).sum()
+
+        sl = (
+            history["status"] == "SL"
+        ).sum()
+
+        active = (
+            history["status"] == "ACTIVE"
+        ).sum()
+
+        ambiguous = (
+            history["status"] == "AMBIGUOUS"
+        ).sum()
+
+        a, b, c = st.columns(3)
+
+        a.metric("Toplam sinyal", total)
+        b.metric("Hedefe ulaşan", int(tp))
+        c.metric("Stop olan", int(sl))
+
+        st.metric("Aktif sinyaller", int(active))
 
         closed = tp + sl
 
         if closed:
+
             st.metric(
-                "Hedefe ulaşanların oranı",
-                f"%{tp/closed*100:.1f}"
+                "Hedefe ulaşma oranı",
+                f"%{tp / closed * 100:.1f}"
             )
 
         if ambiguous:
+
             st.warning(
-                f"{ambiguous} sinyalde aynı mum içinde hem "
-                "stop hem hedef seviyesi görülmüş. "
-                "Sıralama bilinmediğinden sonuç belirsiz."
+                f"{ambiguous} sinyalde aynı mum içinde "
+                "hem stop hem hedef seviyesi görülmüş. "
+                "Sonuç belirsiz."
             )
 
         st.dataframe(
@@ -559,73 +884,26 @@ with tabs[3]:
         )
 
     st.caption(
-        "Geçmiş kayıtları fiyat seviyelerine göre otomatik "
-        "takip edilir; gerçek broker işlemi değildir."
+        "Geçmiş kayıtlar otomatik takip edilir. "
+        "Gerçek broker işlem geçmişi değildir."
     )
 
-# ---------------- RISK ----------------
 
-with tabs[4]:
+# ==========================================
+# ALT BİLGİ
+# ==========================================
 
-    st.header("Risk ve volatilite analizi")
-
-    for item in valid:
-
-        st.subheader(item["market"])
-
-        direction = item["direction"]
-
-        if direction == "WAIT":
-            st.warning(
-                "Şu an işlem önerisi yok. "
-                "Trend koşulları yeterince uyumlu değil."
-            )
-            continue
-
-        distance = abs(
-            item["price"] - item["stop_loss"]
-        )
-
-        target_distance = abs(
-            item["tp2"] - item["price"]
-        )
-
-        rr = (
-            target_distance / distance
-            if distance > 0 else 0
-        )
-
-        a,b,c = st.columns(3)
-
-        a.metric("ATR",f'{item["atr"]:.5f}')
-        b.metric("Stop mesafesi",f'{distance:.5f}')
-        c.metric("TP2 risk/getiri",f"1:{rr:.2f}")
-
-        if item["rsi"] > 70 or item["rsi"] < 30:
-            st.warning(
-                "RSI aşırı bölgeye yakın. "
-                "Fiyat hareketine karşı dikkatli ol."
-            )
-
-        if item["atr"] / item["price"] > 0.005:
-            st.warning(
-                "Volatilite yüksek olabilir. "
-                "İşlem riski ayrıca değerlendirilmelidir."
-            )
-
-        st.caption(
-            "Bu hesaplama spread, komisyon, kayma ve "
-            "broker sözleşme büyüklüğünü içermez."
-        )
-
-        st.divider()
-
-# ---------------- FOOTER ----------------
+st.divider()
 
 st.markdown("""
-<div style="text-align:center;padding:25px;color:#A8B6C9;">
+<div style="
+text-align:center;
+color:#888888;
+font-size:12px;
+padding:12px;
+">
 FOREX RADAR PRO<br>
-Yalnızca analiz ve karar destek sistemi.<br>
-Otomatik işlem açılmaz. Hiçbir sinyal kâr garantisi vermez.
+Sadece analiz ve karar destek sistemi.<br>
+Otomatik emir göndermez. Kâr garantisi vermez.
 </div>
 """, unsafe_allow_html=True)

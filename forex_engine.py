@@ -10,6 +10,8 @@ BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 STATE_FILE = "signal_state.json"
+MAX_HISTORY = 500
+MAX_TRADE_BARS = 96
 
 MARKETS = {
     "EUR/USD": "EURUSD=X",
@@ -34,16 +36,18 @@ MARKETS = {
 }
 
 
+def now_iso():
+    return datetime.now(timezone.utc).isoformat()
+
+
 def send_telegram(message):
     if not BOT_TOKEN or not CHAT_ID:
         print("Telegram bilgileri eksik.")
         return False
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
-
     try:
         response = requests.post(
-            url,
+            f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
             data={
                 "chat_id": CHAT_ID,
                 "text": message,
@@ -51,12 +55,11 @@ def send_telegram(message):
             },
             timeout=20
         )
-
         response.raise_for_status()
-        result = response.json()
 
+        result = response.json()
         if not result.get("ok"):
-            print("Telegram API mesajı kabul etmedi:", result)
+            print("Telegram API hatası:", result)
             return False
 
         return True
@@ -68,15 +71,44 @@ def send_telegram(message):
 
 def load_state():
     try:
-        with open(STATE_FILE, "r", encoding="utf-8") as file:
-            return json.load(file)
+        with open(STATE_FILE, "r", encoding="utf-8") as f:
+            raw = json.load(f)
+
+        # Eski sürümdeki sinyal kayıtlarını yeni yapıya dönüştür.
+        if "last_signals" not in raw:
+            return {
+                "last_signals": raw,
+                "active_trades": {},
+                "history": []
+            }
+
+        raw.setdefault("active_trades", {})
+        raw.setdefault("history", [])
+        return raw
+
     except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        return {
+            "last_signals": {},
+            "active_trades": {},
+            "history": []
+        }
 
 
 def save_state(state):
-    with open(STATE_FILE, "w", encoding="utf-8") as file:
-        json.dump(state, file, indent=2, ensure_ascii=False)
+    temporary = STATE_FILE + ".tmp"
+
+    with open(temporary, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+    os.replace(temporary, STATE_FILE)
+
+
+def format_price(value):
+    if value is None:
+        return "-"
+    if value >= 100:
+        return f"{value:,.3f}"
+    return f"{value:.5f}"
 
 
 def analyze_market(name, symbol):
@@ -87,13 +119,13 @@ def analyze_market(name, symbol):
             auto_adjust=True
         )
 
-        if df is None or df.empty or len(df) < 55:
-            print(f"{name}: Yetersiz veri.")
+        if df is None or df.empty:
             return None
 
-        df = df.dropna(subset=["Close", "High", "Low"])
+        df = df.dropna(subset=["Open", "High", "Low", "Close"])
 
         if len(df) < 55:
+            print(f"{name}: Veri yetersiz.")
             return None
 
         close = df["Close"]
@@ -108,33 +140,24 @@ def analyze_market(name, symbol):
         loss = -delta.clip(upper=0)
 
         avg_gain = gain.ewm(
-            alpha=1/14,
-            adjust=False,
-            min_periods=14
+            alpha=1/14, adjust=False, min_periods=14
         ).mean()
 
         avg_loss = loss.ewm(
-            alpha=1/14,
-            adjust=False,
-            min_periods=14
+            alpha=1/14, adjust=False, min_periods=14
         ).mean()
 
         rs = avg_gain / avg_loss.replace(0, float("nan"))
         rsi = 100 - (100 / (1 + rs))
 
-        true_range = pd.concat(
-            [
-                high - low,
-                (high - close.shift()).abs(),
-                (low - close.shift()).abs()
-            ],
-            axis=1
-        ).max(axis=1)
+        tr = pd.concat([
+            high - low,
+            (high - close.shift()).abs(),
+            (low - close.shift()).abs()
+        ], axis=1).max(axis=1)
 
-        atr = true_range.ewm(
-            alpha=1/14,
-            adjust=False,
-            min_periods=14
+        atr = tr.ewm(
+            alpha=1/14, adjust=False, min_periods=14
         ).mean()
 
         price = float(close.iloc[-1])
@@ -143,13 +166,12 @@ def analyze_market(name, symbol):
         current_rsi = float(rsi.iloc[-1])
         current_atr = float(atr.iloc[-1])
 
-        if not all(map(
-            lambda x: pd.notna(x) and x > 0,
-            [price, e20, e50, current_atr]
-        )):
+        values = [price, e20, e50, current_rsi, current_atr]
+
+        if not all(pd.notna(x) for x in values):
             return None
 
-        if pd.isna(current_rsi):
+        if price <= 0 or current_atr <= 0:
             return None
 
         score = 50
@@ -178,28 +200,15 @@ def analyze_market(name, symbol):
         else:
             signal = "WAIT"
 
-        if signal == "LONG":
-            stop = price - (current_atr * 1.5)
-            target1 = price + (current_atr * 1.5)
-            target2 = price + (current_atr * 3)
-        elif signal == "SHORT":
-            stop = price + (current_atr * 1.5)
-            target1 = price - (current_atr * 1.5)
-            target2 = price - (current_atr * 3)
-        else:
-            stop = None
-            target1 = None
-            target2 = None
-
         return {
             "signal": signal,
             "price": price,
             "score": score,
             "rsi": current_rsi,
             "atr": current_atr,
-            "stop": stop,
-            "target1": target1,
-            "target2": target2
+            "ema20": e20,
+            "ema50": e50,
+            "df": df
         }
 
     except Exception as error:
@@ -207,134 +216,259 @@ def analyze_market(name, symbol):
         return None
 
 
-def format_price(price):
-    if price is None:
-        return "-"
-    if price >= 100:
-        return f"{price:,.3f}"
-    return f"{price:.5f}"
+def open_trade(name, result):
+    direction = result["signal"]
+    entry = result["price"]
+    atr = result["atr"]
 
-
-def create_message(name, result):
-    signal = result["signal"]
-
-    if signal == "LONG":
-        emoji = "🟢"
-    elif signal == "SHORT":
-        emoji = "🔴"
+    if direction == "LONG":
+        stop = entry - 1.5 * atr
+        tp1 = entry + 1.5 * atr
+        tp2 = entry + 3.0 * atr
     else:
-        emoji = "🟡"
+        stop = entry + 1.5 * atr
+        tp1 = entry - 1.5 * atr
+        tp2 = entry - 3.0 * atr
+
+    return {
+        "pair": name,
+        "direction": direction,
+        "entry": entry,
+        "stop": stop,
+        "tp1": tp1,
+        "tp2": tp2,
+        "score": result["score"],
+        "entry_time": result["df"].index[-1].isoformat(),
+        "created_at": now_iso(),
+        "status": "OPEN"
+    }
+
+
+def close_trade(state, name, trade, exit_price, reason):
+    direction = trade["direction"]
+    entry = trade["entry"]
+
+    if direction == "LONG":
+        pnl_pct = (exit_price - entry) / entry * 100
+    else:
+        pnl_pct = (entry - exit_price) / entry * 100
+
+    record = {
+        **trade,
+        "status": "CLOSED",
+        "exit": exit_price,
+        "exit_reason": reason,
+        "pnl_pct": pnl_pct,
+        "closed_at": now_iso()
+    }
+
+    state["history"].append(record)
+    state["history"] = state["history"][-MAX_HISTORY:]
+
+    del state["active_trades"][name]
+
+    outcome = "KÂR" if pnl_pct > 0 else (
+        "ZARAR" if pnl_pct < 0 else "BAŞABAŞ"
+    )
 
     message = (
-        f"{emoji} FOREX RADAR SİNYALİ\n"
+        f"📊 FOREX RADAR İŞLEM SONUCU\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"Parite: {name}\n"
-        f"Sinyal: {signal}\n"
-        f"Fiyat: {format_price(result['price'])}\n"
-        f"Teknik skor: {result['score']}/100\n"
-        f"RSI: {result['rsi']:.1f}\n"
-    )
-
-    if signal != "WAIT":
-        message += (
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"Stop Loss: {format_price(result['stop'])}\n"
-            f"Hedef 1: {format_price(result['target1'])}\n"
-            f"Hedef 2: {format_price(result['target2'])}\n"
-        )
-
-    message += (
+        f"Yön: {direction}\n"
+        f"Giriş: {format_price(entry)}\n"
+        f"Çıkış: {format_price(exit_price)}\n"
+        f"Sonuç: {reason}\n"
+        f"Durum: {outcome}\n"
+        f"Fiyat değişimi: %{pnl_pct:.3f}\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"Zaman: {datetime.now(timezone.utc).strftime('%d.%m.%Y %H:%M UTC')}\n"
-        f"Periyot: 15 dakika\n\n"
-        f"Not: Teknik analiz sinyalidir, garanti işlem değildir. "
-        f"Spread, kayma ve ekonomik haberleri ayrıca kontrol et."
+        f"Bu sanal takip sonucudur; hesap bakiyesi "
+        f"ve gerçek işlem maliyetleri dahil değildir."
     )
 
-    return message
+    send_telegram(message)
+    print(f"{name}: İşlem kapandı: {reason}, %{pnl_pct:.3f}")
+
+
+def check_open_trade(state, name, result):
+    trade = state["active_trades"].get(name)
+
+    if not trade:
+        return
+
+    df = result["df"]
+    entry_time = pd.Timestamp(trade["entry_time"])
+
+    try:
+        if df.index.tz is None and entry_time.tzinfo is not None:
+            entry_time = entry_time.tz_localize(None)
+        elif df.index.tz is not None and entry_time.tzinfo is None:
+            entry_time = entry_time.tz_localize("UTC")
+    except Exception:
+        pass
+
+    candles = df[df.index > entry_time]
+
+    # Önceki taramada kontrol edilmiş mumları tekrar sayma.
+    last_checked = trade.get("last_checked")
+    if last_checked:
+        last_time = pd.Timestamp(last_checked)
+        candles = candles[candles.index > last_time]
+
+    for timestamp, candle in candles.iterrows():
+        high = float(candle["High"])
+        low = float(candle["Low"])
+
+        direction = trade["direction"]
+        stop = trade["stop"]
+        tp1 = trade["tp1"]
+        tp2 = trade["tp2"]
+
+        if direction == "LONG":
+            stop_hit = low <= stop
+            tp2_hit = high >= tp2
+            tp1_hit = high >= tp1
+        else:
+            stop_hit = high >= stop
+            tp2_hit = low <= tp2
+            tp1_hit = low <= tp1
+
+        # Aynı mumda stop ve hedef birlikte görülürse
+        # temkinli varsayımla stop önce gerçekleşmiş sayılır.
+        if stop_hit:
+            close_trade(state, name, trade, stop, "STOP LOSS")
+            return
+
+        if tp2_hit:
+            close_trade(state, name, trade, tp2, "HEDEF 2")
+            return
+
+        if tp1_hit and not trade.get("tp1_notified"):
+            trade["tp1_notified"] = True
+
+            send_telegram(
+                f"🎯 HEDEF 1 ULAŞILDI\n"
+                f"Parite: {name}\n"
+                f"Yön: {direction}\n"
+                f"Hedef: {format_price(tp1)}\n"
+                f"İşlem takip edilmeye devam ediyor."
+            )
+
+        trade["last_checked"] = timestamp.isoformat()
+
+        # 24 saatlik yaklaşık takip süresi.
+        if trade.get("bars_checked", 0) + 1 >= MAX_TRADE_BARS:
+            close_trade(
+                state, name, trade,
+                float(candle["Close"]),
+                "SÜRE DOLDU"
+            )
+            return
+
+        trade["bars_checked"] = trade.get("bars_checked", 0) + 1
+
+    state["active_trades"][name] = trade
+
+
+def report_stats(state):
+    history = state["history"]
+
+    wins = sum(1 for x in history if x["pnl_pct"] > 0)
+    losses = sum(1 for x in history if x["pnl_pct"] < 0)
+    closed = len(history)
+
+    win_rate = (wins / closed * 100) if closed else 0
+    total_return = sum(x["pnl_pct"] for x in history)
+
+    return (
+        f"📈 FOREX RADAR PERFORMANS\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Kapanan takip: {closed}\n"
+        f"Kârlı: {wins}\n"
+        f"Zararlı: {losses}\n"
+        f"Başarı oranı: %{win_rate:.1f}\n"
+        f"Toplam fiyat değişimi: %{total_return:.3f}\n"
+        f"Açık takip: {len(state['active_trades'])}\n"
+        f"━━━━━━━━━━━━━━━━━━\n"
+        f"Bu oran geçmiş sanal takip sonuçlarına dayanır."
+    )
 
 
 def main():
-    print("FOREX RADAR taraması başladı.")
-
     if not BOT_TOKEN or not CHAT_ID:
-        raise RuntimeError("Telegram GitHub Secrets eksik.")
+        raise RuntimeError("Telegram Secrets eksik.")
 
-    old_state = load_state()
-    new_state = {}
+    print("FOREX RADAR takip taraması başladı.")
+
+    state = load_state()
     results = {}
 
     for name, symbol in MARKETS.items():
-        print(f"{name} analiz ediliyor...")
+        print(f"{name} taranıyor...")
         result = analyze_market(name, symbol)
 
-        if result is None:
-            continue
-
-        results[name] = result
-        new_state[name] = {
-            "signal": result["signal"],
-            "price": result["price"],
-            "updated": datetime.now(timezone.utc).isoformat()
-        }
+        if result is not None:
+            results[name] = result
 
     if not results:
-        raise RuntimeError("Hiçbir pariteden geçerli veri alınamadı.")
+        raise RuntimeError("Hiçbir pariteden veri alınamadı.")
 
-    # İlk çalıştırmada mevcut sinyalleri tek özet mesajla bildir.
-    if not old_state:
-        actionable = [
-            (name, result)
-            for name, result in results.items()
-            if result["signal"] in ("LONG", "SHORT")
-        ]
+    # Önce açık sanal işlemleri kontrol et.
+    for name, result in results.items():
+        check_open_trade(state, name, result)
 
-        if actionable:
-            lines = [
-                "🚀 FOREX RADAR İLK TARAMA",
-                "━━━━━━━━━━━━━━━━━━"
-            ]
+    # Yeni ve değişen sinyalleri değerlendir.
+    for name, result in results.items():
+        current = result["signal"]
+        previous = state["last_signals"].get(name, {}).get("signal")
 
-            for name, result in actionable:
-                lines.append(
-                    f"{name}: {result['signal']} | "
-                    f"{format_price(result['price'])} | "
-                    f"Skor: {result['score']}/100"
+        active = state["active_trades"].get(name)
+
+        # Ters sinyal gelirse açık işlemi mevcut fiyatla kapat.
+        if active and current in ("LONG", "SHORT"):
+            if current != active["direction"]:
+                close_trade(
+                    state,
+                    name,
+                    active,
+                    result["price"],
+                    "TERS SİNYAL"
+                )
+                active = None
+
+        # Yeni sinyalde sanal takip başlat.
+        if current in ("LONG", "SHORT") and active is None:
+            if previous != current:
+                trade = open_trade(name, result)
+                trade["bars_checked"] = 0
+                state["active_trades"][name] = trade
+
+                send_telegram(
+                    f"🆕 YENİ SANAL İŞLEM TAKİBİ\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"Parite: {name}\n"
+                    f"Yön: {current}\n"
+                    f"Giriş: {format_price(trade['entry'])}\n"
+                    f"Stop: {format_price(trade['stop'])}\n"
+                    f"Hedef 1: {format_price(trade['tp1'])}\n"
+                    f"Hedef 2: {format_price(trade['tp2'])}\n"
+                    f"Skor: {trade['score']}/100\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"Bu gerçek emir değil, sanal performans takibidir."
                 )
 
-            lines.append(
-                "\nBu ilk tarama özetidir. "
-                "Sinyaller garanti işlem değildir."
-            )
+        state["last_signals"][name] = {
+            "signal": current,
+            "price": result["price"],
+            "updated": now_iso()
+        }
 
-            send_telegram("\n".join(lines))
-        else:
-            send_telegram(
-                "🟡 FOREX RADAR aktif.\n"
-                "İlk tarama tamamlandı. Şu anda LONG veya SHORT "
-                "eşiklerini geçen sinyal bulunamadı."
-            )
+    save_state(state)
 
-    else:
-        # Yalnızca sinyal değiştiğinde mesaj gönder.
-        for name, result in results.items():
-            previous = old_state.get(name, {}).get("signal")
-            current = result["signal"]
+    print(f"Tarama tamamlandı: {len(results)} parite.")
 
-            if previous != current:
-                message = create_message(name, result)
-
-                if send_telegram(message):
-                    print(f"{name}: Yeni sinyal gönderildi.")
-                else:
-                    print(f"{name}: Telegram mesajı gönderilemedi.")
-
-    save_state(new_state)
-
-    print(
-        f"Tarama tamamlandı. "
-        f"{len(results)}/{len(MARKETS)} pariteden veri alındı."
-    )
+    # Sonuç özeti günlük değil, her taramada isteğe bağlıdır.
+    print(report_stats(state))
 
 
 if __name__ == "__main__":

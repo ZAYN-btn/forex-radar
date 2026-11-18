@@ -4,21 +4,16 @@ import yfinance as yf
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import requests
-import xml.etree.ElementTree as ET
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
 st.set_page_config(
     page_title="FOREX RADAR",
-    page_icon="◈",
-    layout="wide",
-    initial_sidebar_state="collapsed"
+    page_icon="📈",
+    layout="wide"
 )
 
-# =====================================================
-# AYARLAR
-# =====================================================
+# ---------------- CONFIG ----------------
 
 MARKETS = {
     "EUR/USD": "EURUSD=X",
@@ -38,733 +33,332 @@ MARKETS = {
     "GBP/AUD": "GBPAUD=X",
     "AUD/NZD": "AUDNZD=X",
     "CAD/JPY": "CADJPY=X",
-    "XAU/USD": "XAUUSD=X",
-    "XAG/USD": "XAGUSD=X"
+    "XAU/USD": "GC=F",
+    "XAG/USD": "SI=F"
 }
 
-# =====================================================
-# BEYAZ ARAYÜZ
-# =====================================================
+# ---------------- STYLE ----------------
 
 st.markdown("""
 <style>
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
-
 html, body, [data-testid="stAppViewContainer"] {
-    background: #FFFFFF !important;
-    color: #171717 !important;
-    font-family: 'Inter', sans-serif;
+    background: #f5f7fa;
+    color: #172033;
 }
-
 [data-testid="stHeader"] {
-    background: #FFFFFF !important;
+    background: #f5f7fa;
 }
-
-[data-testid="stSidebar"] {
-    background: #FFFFFF !important;
-}
-
 .block-container {
-    max-width: 1450px;
     padding-top: 1.5rem;
-    padding-bottom: 3rem;
+    max-width: 1450px;
 }
-
 h1, h2, h3, p, label {
-    color: #171717;
+    color: #172033 !important;
 }
-
-.brand {
-    font-size: 23px;
-    font-weight: 800;
-    letter-spacing: 2px;
-    color: #171717;
+[data-testid="stMetric"] {
+    background: white;
+    border: 1px solid #e7ebf0;
+    border-radius: 13px;
+    padding: 17px;
+    box-shadow: 0 2px 8px rgba(20,30,50,.035);
 }
-
-.brand span {
-    color: #888888;
-}
-
-.topline {
-    border-bottom: 1px solid #EAEAEA;
-    margin-top: 15px;
-    margin-bottom: 22px;
-}
-
-.section-label {
-    color: #777777;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    margin: 25px 0 13px 0;
-}
-
-.metric-card {
-    background: #FFFFFF;
-    border: 1px solid #E9E9E9;
-    border-radius: 9px;
-    padding: 17px 19px;
-    min-height: 90px;
-}
-
-.metric-title {
-    font-size: 10px;
-    color: #777777;
-    letter-spacing: 1.5px;
-    font-weight: 700;
-}
-
-.metric-number {
-    font-size: 27px;
-    font-weight: 800;
-    margin-top: 8px;
-}
-
-.green { color: #16834A !important; }
-.red { color: #D13C3C !important; }
-.yellow { color: #9A751B !important; }
-.muted { color: #777777 !important; }
-
-.main-card {
-    background: #FFFFFF;
-    border: 1px solid #E8E8E8;
+[data-testid="stDataFrame"] {
+    background: white;
     border-radius: 12px;
-    padding: 22px;
-    margin-top: 10px;
 }
-
-.card-top {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 12px;
-}
-
-.pair-name {
-    font-size: 28px;
-    font-weight: 800;
-    letter-spacing: -1px;
-}
-
-.price {
-    color: #777777;
-    font-size: 14px;
-    margin-top: 5px;
-}
-
-.signal {
-    font-size: 12px;
-    font-weight: 800;
-    letter-spacing: 1px;
-    padding: 9px 15px;
-    border-radius: 5px;
-}
-
-.signal-long {
-    background: #F0F8F2;
-    color: #16834A;
-    border: 1px solid #D5EBDD;
-}
-
-.signal-short {
-    background: #FCF1F1;
-    color: #D13C3C;
-    border: 1px solid #F2DADA;
-}
-
-.signal-wait {
-    background: #F4F4F4;
-    color: #777777;
-    border: 1px solid #E6E6E6;
-}
-
-.score {
-    font-size: 30px;
-    font-weight: 800;
-    margin-top: 8px;
-}
-
-.data-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-    margin-top: 20px;
-}
-
-.data-box {
-    background: #F7F8FA;
-    border: 1px solid #ECEEF0;
-    padding: 14px;
-    border-radius: 7px;
-}
-
-.data-title {
-    font-size: 10px;
-    color: #777777;
-    letter-spacing: 1px;
-    margin-bottom: 9px;
-}
-
-.data-value {
-    font-size: 16px;
-    font-weight: 700;
-    color: #171717;
-}
-
-.market-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: #FFFFFF;
-    border: 1px solid #EAEAEA;
-    border-radius: 7px;
-    padding: 14px 16px;
-    margin-bottom: 8px;
-}
-
-.market-name {
-    font-size: 13px;
-    font-weight: 700;
-    color: #171717;
-}
-
-.market-price {
-    font-size: 12px;
-    color: #777777;
-    margin-top: 5px;
-}
-
-.market-signal {
-    font-size: 11px;
-    font-weight: 800;
-}
-
-.info-card {
-    background: #FFFFFF;
-    border: 1px solid #EAEAEA;
+div.stButton > button {
     border-radius: 9px;
-    padding: 20px;
-    margin-bottom: 12px;
-}
-
-div[data-testid="stSelectbox"] label {
-    color: #555555 !important;
-}
-
-div[data-testid="stSelectbox"] > div > div {
-    background: #FFFFFF !important;
-    border-color: #E5E5E5 !important;
-}
-
-div[data-testid="stButton"] button {
-    background: #FFFFFF;
-    color: #171717;
-    border: 1px solid #E5E5E5;
-    border-radius: 7px;
+    border: 1px solid #dce2e9;
+    background: white;
+    color: #172033;
     font-weight: 600;
 }
-
-div[data-testid="stButton"] button:hover {
-    border-color: #16834A;
-    color: #16834A;
+div.stButton > button:hover {
+    border-color: #16a36a;
+    color: #16a36a;
 }
-
 hr {
-    border-color: #EAEAEA !important;
-}
-
-@media(max-width: 700px) {
-    .block-container {
-        padding-left: 12px;
-        padding-right: 12px;
-    }
-
-    .pair-name {
-        font-size: 23px;
-    }
-
-    .data-grid {
-        grid-template-columns: repeat(2, 1fr);
-    }
-
-    .metric-number {
-        font-size: 23px;
-    }
+    border-color: #e5e9ef;
 }
 </style>
 """, unsafe_allow_html=True)
 
+# ---------------- DATA ----------------
 
-# =====================================================
-# HESAPLAMA FONKSİYONLARI
-# =====================================================
-
-def price_format(value):
-    if pd.isna(value):
-        return "—"
-
-    if abs(value) >= 100:
-        return f"{value:,.3f}"
-
-    return f"{value:.5f}"
-
-
-def signal_class(signal):
-    if signal == "LONG":
-        return "signal-long"
-    elif signal == "SHORT":
-        return "signal-short"
-
-    return "signal-wait"
-
-
-def signal_color(signal):
-    if signal == "LONG":
-        return "green"
-    elif signal == "SHORT":
-        return "red"
-
-    return "muted"
-
-
-def calculate_indicators(df):
-
-    close = df["Close"]
-    high = df["High"]
-    low = df["Low"]
-
-    ema20 = close.ewm(
-        span=20,
-        adjust=False
-    ).mean()
-
-    ema50 = close.ewm(
-        span=50,
-        adjust=False
-    ).mean()
-
-    delta = close.diff()
-
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-
-    avg_gain = gain.ewm(
-        alpha=1/14,
-        adjust=False,
-        min_periods=14
-    ).mean()
-
-    avg_loss = loss.ewm(
-        alpha=1/14,
-        adjust=False,
-        min_periods=14
-    ).mean()
-
-    rs = avg_gain / avg_loss.replace(0, np.nan)
-
-    rsi = 100 - (100 / (1 + rs))
-
-    tr = pd.concat([
-        high - low,
-        (high - close.shift()).abs(),
-        (low - close.shift()).abs()
-    ], axis=1).max(axis=1)
-
-    atr = tr.ewm(
-        alpha=1/14,
-        adjust=False,
-        min_periods=14
-    ).mean()
-
-    return ema20, ema50, rsi, atr
-
-
-# =====================================================
-# PARİTE ANALİZİ
-# =====================================================
-
-def analyze_market(name, symbol):
-
+@st.cache_data(ttl=60)
+def get_market_data(ticker):
     try:
-
-        df = yf.Ticker(symbol).history(
+        df = yf.download(
+            ticker,
             period="5d",
             interval="15m",
-            auto_adjust=True
+            progress=False,
+            auto_adjust=True,
+            threads=False
         )
 
-        if df is None or len(df) < 60:
-            return name, {
-                "available": False,
-                "symbol": symbol
-            }
+        if df is None or df.empty:
+            return None
 
-        df = df.dropna()
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
 
-        if len(df) < 30:
-            return name, {
-                "available": False,
-                "symbol": symbol
-            }
+        required = ["Open", "High", "Low", "Close"]
+        if not all(col in df.columns for col in required):
+            return None
 
-        ema20, ema50, rsi, atr = calculate_indicators(df)
+        df = df[required].dropna()
 
-        price = float(df["Close"].iloc[-1])
-        e20 = float(ema20.iloc[-1])
-        e50 = float(ema50.iloc[-1])
-        current_rsi = float(rsi.iloc[-1])
-        current_atr = float(atr.iloc[-1])
+        if len(df) < 55:
+            return None
 
-        if not all(np.isfinite(x) for x in [
-            price, e20, e50, current_rsi, current_atr
-        ]) or current_atr <= 0:
+        df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
+        df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
 
-            return name, {
-                "available": False,
-                "symbol": symbol
-            }
+        delta = df["Close"].diff()
+        gain = delta.clip(lower=0).rolling(14).mean()
+        loss = (-delta.clip(upper=0)).rolling(14).mean()
+        rs = gain / loss.replace(0, np.nan)
+        df["RSI"] = 100 - (100 / (1 + rs))
+        df["RSI"] = df["RSI"].fillna(50)
 
-        # Puanlama
+        previous_close = df["Close"].shift(1)
+        tr = pd.concat([
+            df["High"] - df["Low"],
+            (df["High"] - previous_close).abs(),
+            (df["Low"] - previous_close).abs()
+        ], axis=1).max(axis=1)
 
-        score = 50
+        df["ATR"] = tr.rolling(14).mean()
 
-        if e20 > e50:
-            score += 20
-        else:
-            score -= 20
-
-        if price > e20:
-            score += 15
-        else:
-            score -= 15
-
-        if current_rsi > 50:
-            score += 15
-        else:
-            score -= 15
-
-        score = max(0, min(100, score))
-
-        if score >= 65:
-            signal = "LONG"
-
-        elif score <= 35:
-            signal = "SHORT"
-
-        else:
-            signal = "WAIT"
-
-        # ATR STOP VE HEDEFLER
-
-        entry = price
-
-        if signal == "LONG":
-
-            stop = entry - (current_atr * 1.5)
-
-            risk_distance = entry - stop
-
-            tp1 = entry + risk_distance
-            tp2 = entry + (risk_distance * 2)
-            tp3 = entry + (risk_distance * 3)
-
-        elif signal == "SHORT":
-
-            stop = entry + (current_atr * 1.5)
-
-            risk_distance = stop - entry
-
-            tp1 = entry - risk_distance
-            tp2 = entry - (risk_distance * 2)
-            tp3 = entry - (risk_distance * 3)
-
-        else:
-
-            stop = None
-            tp1 = None
-            tp2 = None
-            tp3 = None
-
-        return name, {
-            "available": True,
-            "symbol": symbol,
-            "df": df,
-            "price": price,
-            "ema20": e20,
-            "ema50": e50,
-            "rsi": current_rsi,
-            "atr": current_atr,
-            "score": score,
-            "signal": signal,
-            "entry": entry,
-            "stop": stop,
-            "tp1": tp1,
-            "tp2": tp2,
-            "tp3": tp3,
-            "updated": datetime.now()
-        }
+        return df.dropna()
 
     except Exception:
+        return None
 
-        return name, {
-            "available": False,
-            "symbol": symbol
+
+def analyze_market(name, ticker):
+    df = get_market_data(ticker)
+
+    if df is None or df.empty:
+        return {
+            "pair": name,
+            "price": None,
+            "signal": "VERİ YOK",
+            "score": 0,
+            "rsi": None,
+            "ema": "—",
+            "atr": None,
+            "df": None
         }
 
+    last = df.iloc[-1]
+    price = float(last["Close"])
+    ema20 = float(last["EMA20"])
+    ema50 = float(last["EMA50"])
+    rsi = float(last["RSI"])
+    atr = float(last["ATR"])
 
-@st.cache_data(ttl=180, show_spinner=False)
-def get_market_data():
+    score = 50
 
-    results = {}
+    if ema20 > ema50:
+        score += 20
+    else:
+        score -= 20
 
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    if price > ema20:
+        score += 15
+    else:
+        score -= 15
 
-        futures = {
-            executor.submit(
-                analyze_market,
-                name,
-                symbol
-            ): name
+    if rsi > 55:
+        score += 15
+    elif rsi < 45:
+        score -= 15
 
-            for name, symbol in MARKETS.items()
-        }
+    score = max(0, min(100, score))
 
-        for future in as_completed(futures):
+    if score >= 65:
+        signal = "LONG"
+    elif score <= 35:
+        signal = "SHORT"
+    else:
+        signal = "WAIT"
 
-            name, result = future.result()
+    return {
+        "pair": name,
+        "price": price,
+        "signal": signal,
+        "score": score,
+        "rsi": rsi,
+        "ema": "Yükseliş" if ema20 > ema50 else "Düşüş",
+        "atr": atr,
+        "df": df
+    }
 
-            results[name] = result
 
+def calculate_levels(data):
+    price = data["price"]
+    atr = data["atr"]
+    signal = data["signal"]
+
+    if price is None or atr is None or signal == "WAIT":
+        return None
+
+    if signal == "LONG":
+        entry = price
+        sl = entry - (atr * 1.5)
+        tp1 = entry + (atr * 1.0)
+        tp2 = entry + (atr * 2.0)
+        tp3 = entry + (atr * 3.0)
+    else:
+        entry = price
+        sl = entry + (atr * 1.5)
+        tp1 = entry - (atr * 1.0)
+        tp2 = entry - (atr * 2.0)
+        tp3 = entry - (atr * 3.0)
+
+    return {
+        "entry": entry,
+        "sl": sl,
+        "tp1": tp1,
+        "tp2": tp2,
+        "tp3": tp3
+    }
+
+
+# ---------------- HEADER ----------------
+
+st.title("FOREX RADAR")
+st.caption("FOREX MARKET ANALYSIS TERMINAL")
+st.caption("Piyasa verileri gecikmeli olabilir. Sinyaller otomatik teknik analiz çıktısıdır.")
+
+now = datetime.now().strftime("%d.%m.%Y  %H:%M:%S")
+st.write(f"Son kontrol: {now}")
+
+if st.button("↻ PİYASAYI YENİLE"):
+    st.cache_data.clear()
+    st.rerun()
+
+st.divider()
+
+# ---------------- SCAN ----------------
+
+@st.cache_data(ttl=60)
+def scan_all():
+    results = []
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = [
+            executor.submit(analyze_market, name, ticker)
+            for name, ticker in MARKETS.items()
+        ]
+        for future in futures:
+            try:
+                results.append(future.result())
+            except Exception:
+                pass
     return results
 
 
-# =====================================================
-# ÜST BÖLÜM
-# =====================================================
+with st.spinner("Piyasalar taranıyor..."):
+    results = scan_all()
 
-st.markdown("""
-<div class="brand">FOREX <span>RADAR</span></div>
-<div class="topline"></div>
-""", unsafe_allow_html=True)
+valid = [x for x in results if x["price"] is not None]
 
-col1, col2 = st.columns([5, 1])
+long_count = sum(x["signal"] == "LONG" for x in valid)
+short_count = sum(x["signal"] == "SHORT" for x in valid)
+wait_count = sum(x["signal"] == "WAIT" for x in valid)
 
-with col1:
-    st.caption("MARKET ANALYSIS TERMINAL")
+# ---------------- SUMMARY ----------------
 
-with col2:
-    if st.button("↻ Yenile", use_container_width=True):
-        st.cache_data.clear()
-        st.rerun()
+st.subheader("Piyasa Özeti")
 
+c1, c2, c3, c4 = st.columns(4)
 
-with st.spinner("Piyasalar analiz ediliyor..."):
-    data = get_market_data()
+c1.metric("LONG", long_count)
+c2.metric("SHORT", short_count)
+c3.metric("WAIT", wait_count)
+c4.metric("Taranan Parite", f"{len(valid)}/{len(MARKETS)}")
 
+st.divider()
 
-# =====================================================
-# SİNYAL SAYILARI
-# =====================================================
+# ---------------- MARKET TABLE ----------------
 
-valid_data = {
-    name: item
-    for name, item in data.items()
-    if item.get("available")
-}
+st.subheader("Tüm Piyasalar")
 
-long_count = sum(
-    item["signal"] == "LONG"
-    for item in valid_data.values()
-)
+table_rows = []
 
-short_count = sum(
-    item["signal"] == "SHORT"
-    for item in valid_data.values()
-)
+for item in results:
+    table_rows.append({
+        "PARİTE": item["pair"],
+        "FİYAT": round(item["price"], 5) if item["price"] is not None else "—",
+        "SİNYAL": item["signal"],
+        "GÜÇ": f"%{item['score']}",
+        "RSI": round(item["rsi"], 2) if item["rsi"] is not None else "—",
+        "EMA TRENDİ": item["ema"]
+    })
 
-wait_count = sum(
-    item["signal"] == "WAIT"
-    for item in valid_data.values()
-)
+table = pd.DataFrame(table_rows)
 
-st.markdown(
-    '<div class="section-label">PİYASA ÖZETİ</div>',
-    unsafe_allow_html=True
-)
+def color_signal(value):
+    if value == "LONG":
+        return "background-color: #dcfce7; color: #15803d; font-weight: bold"
+    if value == "SHORT":
+        return "background-color: #fee2e2; color: #b91c1c; font-weight: bold"
+    if value == "WAIT":
+        return "background-color: #f1f5f9; color: #475569; font-weight: bold"
+    return ""
 
-c1, c2, c3 = st.columns(3)
-
-with c1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">LONG</div>
-        <div class="metric-number green">{long_count:02d}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c2:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">SHORT</div>
-        <div class="metric-number red">{short_count:02d}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-with c3:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-title">BEKLE</div>
-        <div class="metric-number muted">{wait_count:02d}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# =====================================================
-# TÜM PARİTELER
-# =====================================================
-
-st.markdown(
-    '<div class="section-label">TÜM PARİTELER</div>',
-    unsafe_allow_html=True
-)
-
-rows = []
-
-for name in MARKETS:
-
-    item = data.get(name, {})
-
-    if item.get("available"):
-
-        rows.append({
-            "PARİTE": name,
-            "FİYAT": price_format(item["price"]),
-            "SİNYAL": item["signal"],
-            "SKOR": f"{item['score']}/100",
-            "RSI": round(item["rsi"], 1),
-            "STOP LOSS": (
-                price_format(item["stop"])
-                if item["stop"] is not None else "—"
-            ),
-            "TP1": (
-                price_format(item["tp1"])
-                if item["tp1"] is not None else "—"
-            ),
-            "TP2": (
-                price_format(item["tp2"])
-                if item["tp2"] is not None else "—"
-            ),
-            "TP3": (
-                price_format(item["tp3"])
-                if item["tp3"] is not None else "—"
-            )
-        })
-
-    else:
-
-        rows.append({
-            "PARİTE": name,
-            "FİYAT": "—",
-            "SİNYAL": "VERİ YOK",
-            "SKOR": "—",
-            "RSI": "—",
-            "STOP LOSS": "—",
-            "TP1": "—",
-            "TP2": "—",
-            "TP3": "—"
-        })
-
-
-market_df = pd.DataFrame(rows)
+styled_table = table.style.map(color_signal, subset=["SİNYAL"])
 
 st.dataframe(
-    market_df,
+    styled_table,
     use_container_width=True,
     hide_index=True,
-    height=650
+    height=680
 )
 
-st.caption(
-    f"{len(valid_data)} / {len(MARKETS)} paritenin verisi başarıyla alındı."
-)
+st.divider()
 
+# ---------------- SELECTED MARKET ----------------
 
-# =====================================================
-# GRAFİK SEÇİMİ
-# =====================================================
+st.subheader("Detaylı Piyasa Analizi")
 
-st.markdown(
-    '<div class="section-label">SEÇİLİ PARİTE</div>',
-    unsafe_allow_html=True
-)
+available_pairs = [x["pair"] for x in valid]
 
-selected = st.selectbox(
-    "Grafiğini ve işlem seviyelerini görüntüle",
-    list(MARKETS.keys()),
-    index=0
-)
+if available_pairs:
+    selected_pair = st.selectbox(
+        "Analiz edilecek parite",
+        available_pairs
+    )
 
-item = data.get(selected, {})
+    selected = next(x for x in valid if x["pair"] == selected_pair)
 
+    st.markdown(f"### {selected_pair}")
 
-if item.get("available"):
+    a, b, c, d = st.columns(4)
 
-    signal = item["signal"]
+    a.metric(
+        "Güncel Fiyat",
+        f"{selected['price']:.5f}"
+    )
 
-    st.markdown(f"""
-    <div class="main-card">
+    b.metric(
+        "Sinyal",
+        selected["signal"]
+    )
 
-        <div class="card-top">
+    c.metric(
+        "Sinyal Gücü",
+        f"%{selected['score']}"
+    )
 
-            <div>
-                <div class="pair-name">{selected}</div>
-                <div class="price">
-                    {price_format(item['price'])}
-                </div>
-            </div>
+    d.metric(
+        "RSI",
+        f"{selected['rsi']:.2f}"
+    )
 
-            <div class="signal {signal_class(signal)}">
-                {signal}
-            </div>
-
-        </div>
-
-        <div style="margin-top:22px">
-
-            <div class="metric-title">
-                ANALİZ SKORU
-            </div>
-
-            <div class="score">
-                {item['score']}
-                <span style="font-size:14px;color:#777">
-                    / 100
-                </span>
-            </div>
-
-            <div style="
-                height:5px;
-                background:#EEEEEE;
-                border-radius:5px;
-                margin-top:10px;
-            ">
-                <div style="
-                    height:5px;
-                    width:{item['score']}%;
-                    background:#16834A;
-                    border-radius:5px;
-                "></div>
-            </div>
-
-        </div>
-
-    </div>
-    """, unsafe_allow_html=True)
-
-    # GRAFİK
-
-    df = item["df"]
+    df = selected["df"]
 
     fig = go.Figure()
 
@@ -774,224 +368,111 @@ if item.get("available"):
         high=df["High"],
         low=df["Low"],
         close=df["Close"],
-        name="Fiyat",
-        increasing_line_color="#16834A",
-        decreasing_line_color="#D13C3C"
+        name="Fiyat"
     ))
 
     fig.add_trace(go.Scatter(
         x=df.index,
-        y=df["Close"].ewm(span=20).mean(),
+        y=df["EMA20"],
         name="EMA 20",
-        line=dict(color="#3286D8", width=1.5)
+        line=dict(width=1.5)
     ))
 
     fig.add_trace(go.Scatter(
         x=df.index,
-        y=df["Close"].ewm(span=50).mean(),
+        y=df["EMA50"],
         name="EMA 50",
-        line=dict(color="#D99A35", width=1.5)
+        line=dict(width=1.5)
     ))
-
-    # İşlem seviyeleri
-
-    if signal in ["LONG", "SHORT"]:
-
-        levels = [
-            ("ENTRY", item["entry"], "#3286D8"),
-            ("STOP LOSS", item["stop"], "#D13C3C"),
-            ("TP1", item["tp1"], "#16834A"),
-            ("TP2", item["tp2"], "#16834A"),
-            ("TP3", item["tp3"], "#16834A")
-        ]
-
-        for label, value, color in levels:
-
-            fig.add_hline(
-                y=value,
-                line_dash="dot",
-                line_color=color,
-                annotation_text=label,
-                annotation_position="right"
-            )
 
     fig.update_layout(
+        height=470,
         template="plotly_white",
-        paper_bgcolor="#FFFFFF",
-        plot_bgcolor="#FFFFFF",
-        font=dict(
-            family="Inter",
-            color="#333333"
-        ),
-        height=430,
+        margin=dict(l=10, r=10, t=25, b=10),
         xaxis_rangeslider_visible=False,
-        margin=dict(l=10, r=55, t=20, b=10),
-        legend=dict(
-            orientation="h",
-            y=1.08,
-            x=0
-        ),
-        xaxis=dict(
-            showgrid=True,
-            gridcolor="#EEEEEE"
-        ),
-        yaxis=dict(
-            showgrid=True,
-            gridcolor="#EEEEEE"
-        )
+        legend=dict(orientation="h")
     )
 
-    st.plotly_chart(
-        fig,
-        use_container_width=True,
-        config={
-            "displayModeBar": False,
-            "responsive": True
-        }
-    )
+    st.plotly_chart(fig, use_container_width=True)
 
-    # İŞLEM SEVİYELERİ
+    # RSI
+    st.markdown("#### RSI Göstergesi")
+    st.progress(int(max(0, min(100, selected["rsi"]))))
+    st.caption(f"RSI: {selected['rsi']:.2f} | EMA trendi: {selected['ema']}")
 
-    st.markdown(
-        '<div class="section-label">İŞLEM SEVİYELERİ</div>',
-        unsafe_allow_html=True
-    )
+    # TRADE LEVELS
+    st.markdown("#### İşlem Seviyeleri")
 
-    if signal in ["LONG", "SHORT"]:
+    levels = calculate_levels(selected)
 
-        levels = [
-            ("GİRİŞ", item["entry"], "muted"),
-            ("STOP LOSS", item["stop"], "red"),
-            ("TAKE PROFIT 1", item["tp1"], "green"),
-            ("TAKE PROFIT 2", item["tp2"], "green"),
-            ("TAKE PROFIT 3", item["tp3"], "green")
-        ]
+    if levels:
+        l1, l2, l3, l4, l5 = st.columns(5)
 
-        cols = st.columns(3)
-
-        for index, (label, value, color) in enumerate(levels):
-
-            with cols[index % 3]:
-
-                st.markdown(f"""
-                <div class="data-box">
-                    <div class="data-title">{label}</div>
-                    <div class="data-value {color}">
-                        {price_format(value)}
-                    </div>
-                </div>
-                """, unsafe_allow_html=True)
-
-        st.markdown(
-            '<div class="section-label">TEKNİK GÖSTERGELER</div>',
-            unsafe_allow_html=True
-        )
-
-        a, b, c = st.columns(3)
-
-        a.metric("RSI", f"{item['rsi']:.1f}")
-        b.metric("EMA 20", price_format(item["ema20"]))
-        c.metric("EMA 50", price_format(item["ema50"]))
+        l1.metric("ENTRY", f"{levels['entry']:.5f}")
+        l2.metric("STOP LOSS", f"{levels['sl']:.5f}")
+        l3.metric("TAKE PROFIT 1", f"{levels['tp1']:.5f}")
+        l4.metric("TAKE PROFIT 2", f"{levels['tp2']:.5f}")
+        l5.metric("TAKE PROFIT 3", f"{levels['tp3']:.5f}")
 
         st.caption(
-            "Stop mesafesi 1.5 ATR olarak hesaplanmıştır. "
-            "TP1 = 1R, TP2 = 2R, TP3 = 3R."
+            "Seviyeler ATR tabanlı örnek teknik seviyelerdir. "
+            "Spread, komisyon, kayma ve piyasa koşulları dahil değildir."
         )
-
     else:
-
-        st.info(
-            "Şu anda işlem yönü için yeterli sinyal koşulu oluşmadı. "
-            "Bu nedenle aktif giriş, stop ve hedef seviyesi üretilmedi."
-        )
-
-        a, b, c = st.columns(3)
-
-        a.metric("RSI", f"{item['rsi']:.1f}")
-        b.metric("EMA 20", price_format(item["ema20"]))
-        c.metric("EMA 50", price_format(item["ema50"]))
+        st.info("Şu anda işlem seviyesi üretmek için yeterli LONG veya SHORT koşulu yok.")
 
 else:
+    st.warning("Şu anda analiz edilebilir piyasa verisi alınamadı.")
 
-    st.warning(
-        f"{selected} için şu anda veri alınamıyor. "
-        "Başka bir parite seçebilir veya daha sonra tekrar deneyebilirsin."
+st.divider()
+
+# ---------------- RISK CALCULATOR ----------------
+
+st.subheader("Risk Hesaplayıcı")
+
+r1, r2, r3 = st.columns(3)
+
+with r1:
+    balance = st.number_input(
+        "Hesap bakiyesi ($)",
+        min_value=1.0,
+        value=1000.0,
+        step=100.0
     )
 
+with r2:
+    risk_percent = st.number_input(
+        "Risk (%)",
+        min_value=0.1,
+        max_value=10.0,
+        value=1.0,
+        step=0.1
+    )
 
-# =====================================================
-# HABERLER
-# =====================================================
+with r3:
+    stop_distance = st.number_input(
+        "Stop mesafesi (pip)",
+        min_value=0.1,
+        value=30.0,
+        step=1.0
+    )
 
-with st.expander("PİYASA HABERLERİ"):
+risk_amount = balance * risk_percent / 100
+pip_value = risk_amount / stop_distance
 
-    try:
-
-        response = requests.get(
-            "https://nfs.faireconomy.media/ff_calendar_thisweek.xml",
-            timeout=12,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-
-        response.raise_for_status()
-
-        root = ET.fromstring(response.content)
-
-        events = root.findall(".//event")
-
-        for event in events[:30]:
-
-            title = event.findtext(
-                "title",
-                "Başlıksız haber"
-            )
-
-            country = event.findtext("country", "")
-            date = event.findtext("date", "")
-            time = event.findtext("time", "")
-            impact = event.findtext("impact", "Bilinmiyor")
-
-            forecast = event.findtext("forecast", "-")
-            previous = event.findtext("previous", "-")
-
-            st.markdown(f"""
-            <div class="info-card">
-                <b>{title}</b>
-                <div class="market-price">
-                    {country} · {date} {time}
-                </div>
-                <div class="market-price">
-                    Önem: {impact} · Tahmin: {forecast}
-                    · Önceki: {previous}
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
-
-    except Exception:
-
-        st.warning("Haber akışı şu anda alınamıyor.")
-
-
-# =====================================================
-# ALT BİLGİ
-# =====================================================
-
-st.markdown('<div class="topline"></div>', unsafe_allow_html=True)
-
-st.markdown("""
-<div style="
-    text-align:center;
-    color:#888888;
-    font-size:10px;
-    letter-spacing:1px;
-">
-    FOREX RADAR · MARKET ANALYSIS TERMINAL
-    <br><br>
-    Teknik analiz bilgilendirme amaçlıdır.
-    İşlem garantisi veya yatırım tavsiyesi değildir.
-</div>
-""", unsafe_allow_html=True)
+st.metric("Risk Tutarı", f"${risk_amount:.2f}")
+st.metric("Gerekli pip başına değer", f"${pip_value:.2f}")
 
 st.caption(
-    "Son veri kontrolü: " + datetime.now().strftime("%d.%m.%Y %H:%M:%S")
+    "Bu hesaplayıcı basitleştirilmiş bir örnektir. "
+    "Lot büyüklüğü hesaplamasında parite, hesap para birimi ve broker pip değeri ayrıca dikkate alınmalıdır."
+)
+
+st.divider()
+
+# ---------------- FOOTER ----------------
+
+st.caption(
+    "FOREX RADAR | Otomatik teknik analiz aracı | "
+    "Yatırım tavsiyesi değildir. Hiçbir sinyal kâr veya işlem başarısı garantisi vermez."
 )

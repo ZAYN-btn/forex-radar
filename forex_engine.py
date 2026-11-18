@@ -1,43 +1,49 @@
 
-import os
-import json
-import urllib.request
-from datetime import datetime, timezone
-
 import pandas as pd
 import yfinance as yf
-
-BALANCE_USD = 10000
-RISK_PERCENT = 0.5
-RISK_USD = BALANCE_USD * RISK_PERCENT / 100
+from datetime import datetime, timezone
 
 MARKETS = {
     "EUR/USD": "EURUSD=X",
     "GBP/USD": "GBPUSD=X",
     "USD/JPY": "JPY=X",
+    "USD/CHF": "CHF=X",
+    "USD/CAD": "CAD=X",
+    "AUD/USD": "AUDUSD=X",
+    "NZD/USD": "NZDUSD=X",
+
+    "EUR/GBP": "EURGBP=X",
+    "EUR/JPY": "EURJPY=X",
+    "EUR/CHF": "EURCHF=X",
+    "GBP/JPY": "GBPJPY=X",
+    "GBP/CHF": "GBPCHF=X",
+    "AUD/JPY": "AUDJPY=X",
+    "EUR/AUD": "EURAUD=X",
+    "GBP/AUD": "GBPAUD=X",
+    "AUD/NZD": "AUDNZD=X",
+    "CAD/JPY": "CADJPY=X",
+
     "XAU/USD": "XAUUSD=X",
+    "XAG/USD": "XAGUSD=X"
 }
 
+def indicators(df):
+    df = df.copy()
 
-def get_data(symbol, period, interval):
-    df = yf.Ticker(symbol).history(
-        period=period,
-        interval=interval,
-        auto_adjust=False
-    )
+    df["EMA20"] = df["Close"].ewm(
+        span=20, adjust=False
+    ).mean()
 
-    if df.empty or len(df) < 55:
-        raise ValueError("Yeterli veri alınamadı")
-
-    df = df.dropna(subset=["Close", "High", "Low"]).copy()
-
-    df["EMA20"] = df["Close"].ewm(span=20, adjust=False).mean()
-    df["EMA50"] = df["Close"].ewm(span=50, adjust=False).mean()
+    df["EMA50"] = df["Close"].ewm(
+        span=50, adjust=False
+    ).mean()
 
     change = df["Close"].diff()
+
     gain = change.clip(lower=0).ewm(
         alpha=1/14, adjust=False
     ).mean()
+
     loss = (-change.clip(upper=0)).ewm(
         alpha=1/14, adjust=False
     ).mean()
@@ -46,6 +52,7 @@ def get_data(symbol, period, interval):
     df["RSI"] = 100 - (100 / (1 + rs))
 
     previous = df["Close"].shift(1)
+
     tr = pd.concat([
         df["High"] - df["Low"],
         (df["High"] - previous).abs(),
@@ -55,6 +62,18 @@ def get_data(symbol, period, interval):
     df["ATR"] = tr.rolling(14).mean()
 
     return df.dropna()
+
+
+def resample_data(df, timeframe):
+    result = df.resample(timeframe).agg({
+        "Open": "first",
+        "High": "max",
+        "Low": "min",
+        "Close": "last",
+        "Volume": "sum"
+    })
+
+    return result.dropna()
 
 
 def get_trend(row):
@@ -69,23 +88,41 @@ def get_trend(row):
 
 def analyze_market(name, symbol):
     try:
-        source_note = "Yahoo Finance"
+        raw = yf.Ticker(symbol).history(
+            period="5d",
+            interval="5m",
+            auto_adjust=False
+        )
 
-        try:
-            m5 = get_data(symbol, "5d", "5m")
-        except Exception:
-            if name != "XAU/USD":
-                raise
+        if raw.empty or len(raw) < 100:
+            raise ValueError("Yeterli 5 dakikalık veri yok")
 
-            # GC=F altın vadeli işlemidir; spot altın değildir.
-            m5 = get_data("GC=F", "5d", "5m")
-            source_note = "GC=F altın vadeli proxy"
+        raw = raw.dropna(
+            subset=["Open", "High", "Low", "Close"]
+        )
 
-        if name == "XAU/USD" and source_note == "Yahoo Finance":
-            source_note = "XAU/USD veri kaynağı"
+        if raw.empty:
+            raise ValueError("Eksik fiyat verisi")
 
-        m15 = get_data(symbol, "10d", "15m")
-        h1 = get_data(symbol, "30d", "1h")
+        last_time = raw.index[-1]
+
+        if last_time.tzinfo is None:
+            last_time = last_time.tz_localize("UTC")
+
+        age = (
+            datetime.now(timezone.utc)
+            - last_time.to_pydatetime()
+        ).total_seconds() / 60
+
+        if age > 30:
+            raise ValueError("Fiyat verisi güncel değil")
+
+        m5 = indicators(raw)
+        m15 = indicators(resample_data(raw, "15min"))
+        h1 = indicators(resample_data(raw, "1h"))
+
+        if len(m5) < 2 or len(m15) < 55 or len(h1) < 55:
+            raise ValueError("Zaman dilimleri için veri yetersiz")
 
         r5 = m5.iloc[-1]
         r15 = m15.iloc[-1]
@@ -95,16 +132,8 @@ def analyze_market(name, symbol):
         rsi = float(r5["RSI"])
         atr = float(r5["ATR"])
 
-        last_time = m5.index[-1]
-        if last_time.tzinfo is None:
-            last_time = last_time.tz_localize("UTC")
-
-        age_minutes = (
-            datetime.now(timezone.utc) - last_time.to_pydatetime()
-        ).total_seconds() / 60
-
-        if age_minutes > 30:
-            raise ValueError("Piyasa verisi güncel değil")
+        if atr <= 0:
+            raise ValueError("ATR hesaplanamadı")
 
         trend5 = get_trend(r5)
         trend15 = get_trend(r15)
@@ -142,46 +171,53 @@ def analyze_market(name, symbol):
         supports = recent.loc[
             recent["Low"] < price, "Low"
         ]
+
         resistances = recent.loc[
             recent["High"] > price, "High"
         ]
 
-        support = float(supports.max()) if not supports.empty else None
+        support = (
+            float(supports.max())
+            if not supports.empty else None
+        )
+
         resistance = (
             float(resistances.min())
             if not resistances.empty else None
         )
 
-        stop_loss = None
+        sl = None
         tp1 = None
         tp2 = None
 
         if direction == "LONG":
-            stop_loss = price - (1.5 * atr)
-            tp1 = price + (1.5 * atr)
-            tp2 = price + (3 * atr)
+            sl = price - 1.5 * atr
+            tp1 = price + 1.5 * atr
+            tp2 = price + 3 * atr
 
         elif direction == "SHORT":
-            stop_loss = price + (1.5 * atr)
-            tp1 = price - (1.5 * atr)
-            tp2 = price - (3 * atr)
+            sl = price + 1.5 * atr
+            tp1 = price - 1.5 * atr
+            tp2 = price - 3 * atr
 
         return {
             "market": name,
             "direction": direction,
-            "score": score,
+            "score": min(score, 100),
             "price": price,
             "rsi": rsi,
+            "atr": atr,
             "trend5": trend5,
             "trend15": trend15,
             "trend1": trend1,
             "support": support,
             "resistance": resistance,
-            "stop_loss": stop_loss,
+            "stop_loss": sl,
             "tp1": tp1,
             "tp2": tp2,
-            "risk_usd": RISK_USD,
-            "source": source_note,
+            "bar_high": float(r5["High"]),
+            "bar_low": float(r5["Low"]),
+            "data_age": round(age, 1),
             "status": "OK"
         }
 
@@ -192,94 +228,3 @@ def analyze_market(name, symbol):
             "status": "ERROR",
             "error": str(error)
         }
-
-
-def send_telegram(message):
-    token = os.environ.get("TELEGRAM_BOT_TOKEN")
-    chat_id = os.environ.get("TELEGRAM_CHAT_ID")
-
-    if not token or not chat_id:
-        raise RuntimeError("Telegram ayarları eksik!")
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
-
-    payload = {
-        "chat_id": chat_id,
-        "text": message
-    }
-
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
-    )
-
-    with urllib.request.urlopen(request, timeout=20) as response:
-        result = json.loads(response.read())
-
-    if not result.get("ok"):
-        raise RuntimeError("Telegram mesajı gönderilemedi")
-
-
-def main():
-    results = []
-
-    for name, symbol in MARKETS.items():
-        results.append(analyze_market(name, symbol))
-
-    lines = [
-        "📡 FOREX RADAR PRO",
-        "ÇOKLU ZAMAN DİLİMİ ANALİZİ",
-        datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        f"Demo bakiye: ${BALANCE_USD:,.0f}",
-        f"İşlem başına planlanan risk: ${RISK_USD:.2f}",
-        ""
-    ]
-
-    for item in results:
-        lines.append("━━━━━━━━━━━━━━")
-        lines.append(f"📊 {item['market']}")
-
-        if item["status"] == "ERROR":
-            lines.append("⚠️ İŞLEM ÖNERİSİ YOK")
-            lines.append(item["error"][:150])
-            continue
-
-        lines.append(f"Karar: {item['direction']}")
-        lines.append(f"Uyum puanı: {item['score']}/100")
-        lines.append(f"Fiyat: {item['price']:.5f}")
-        lines.append(f"RSI: {item['rsi']:.2f}")
-        lines.append(
-            f"Trend 5m / 15m / 1h: "
-            f"{item['trend5']} / {item['trend15']} / {item['trend1']}"
-        )
-
-        if item["support"] is not None:
-            lines.append(f"Destek: {item['support']:.5f}")
-
-        if item["resistance"] is not None:
-            lines.append(f"Direnç: {item['resistance']:.5f}")
-
-        if item["direction"] != "WAIT":
-            lines.append(f"Giriş referansı: {item['price']:.5f}")
-            lines.append(f"Stop Loss: {item['stop_loss']:.5f}")
-            lines.append(f"TP1: {item['tp1']:.5f}")
-            lines.append(f"TP2: {item['tp2']:.5f}")
-            lines.append(f"Planlanan risk bütçesi: ${RISK_USD:.2f}")
-            lines.append("Lot miktarı: Aracı kurum bilgisi bekleniyor")
-
-        lines.append(f"Veri kaynağı: {item['source']}")
-
-    lines.extend([
-        "",
-        "⚠️ Ekonomik haber takvimi henüz bağlı değil.",
-        "⚠️ Uyum puanı kazanma olasılığı değildir.",
-        "⚠️ Fiyatlar gecikmeli olabilir.",
-        "Bu sistem emir açmaz; yalnızca analiz sunar."
-    ])
-
-    send_telegram("\n".join(lines))
-
-
-if __name__ == "__main__":
-    main()
